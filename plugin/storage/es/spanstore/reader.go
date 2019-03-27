@@ -162,8 +162,6 @@ func getTimeRangeIndexFn(archive, useReadWriteAliases bool) timeRangeIndexFn {
 
 // timeRangeIndices returns the array of indices that we need to query, based on query params
 func timeRangeIndices(indexNames []string, startTime time.Time, endTime time.Time) []string {
-	s, e := startTime.Format("2006-01-02-15"), endTime.Format("2006-01-02-15")
-	_, _ = s,e
 	var indices []string
 	for _, indexName := range indexNames {
 		firstIndex := indexWithDate(indexName, startTime)
