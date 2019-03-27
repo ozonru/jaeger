@@ -60,7 +60,7 @@ func TestSpanWriterIndices(t *testing.T) {
 	logger, _ := testutils.NewLogger()
 	metricsFactory := metricstest.NewFactory(0)
 	date := time.Now()
-	dateFormat := date.UTC().Format("2006-01-02")
+	dateFormat := date.UTC().Format("2006-01-02-15")
 	testCases := []struct {
 		indices []string
 		params  SpanWriterParams
@@ -242,8 +242,8 @@ func TestSpanIndexName(t *testing.T) {
 	}
 	spanIndexName := indexWithDate(spanIndex, span.StartTime)
 	serviceIndexName := indexWithDate(serviceIndex, span.StartTime)
-	assert.Equal(t, "jaeger-span-1995-04-21", spanIndexName)
-	assert.Equal(t, "jaeger-service-1995-04-21", serviceIndexName)
+	assert.Equal(t, "jaeger-span-1995-04-21-22", spanIndexName)
+	assert.Equal(t, "jaeger-service-1995-04-21-22", serviceIndexName)
 }
 
 func TestWriteSpanInternal(t *testing.T) {
