@@ -168,7 +168,7 @@ func timeRangeIndices(indexNames []string, startTime time.Time, endTime time.Tim
 		currentIndex := indexWithDate(indexName, endTime)
 		for currentIndex != firstIndex {
 			indices = append(indices, currentIndex)
-			endTime = endTime.Add(-24 * time.Hour)
+			endTime = endTime.Add(-time.Hour)
 			currentIndex = indexWithDate(indexName, endTime)
 		}
 		indices = append(indices, firstIndex)

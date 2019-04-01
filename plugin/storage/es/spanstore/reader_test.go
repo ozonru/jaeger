@@ -29,7 +29,7 @@ import (
 	"github.com/uber/jaeger-lib/metrics"
 	"github.com/uber/jaeger-lib/metrics/metricstest"
 	"go.uber.org/zap"
-	"gopkg.in/olivere/elastic.v5"
+	elastic "gopkg.in/olivere/elastic.v5"
 
 	"github.com/jaegertracing/jaeger/model"
 	"github.com/jaegertracing/jaeger/pkg/es/mocks"
@@ -142,32 +142,32 @@ func TestSpanReaderIndices(t *testing.T) {
 	logger, _ := testutils.NewLogger()
 	metricsFactory := metricstest.NewFactory(0)
 	date := time.Now()
-	dateFormat := date.UTC().Format("2006-01-02")
+	dateFormat := date.UTC().Format("2006-01-02-15")
 	testCases := []struct {
 		indices []string
 		params  SpanReaderParams
 	}{
-		{params:SpanReaderParams{Client:client, Logger: logger, MetricsFactory: metricsFactory,
-			IndexPrefix:"", Archive: false},
-			indices: []string{spanIndex+dateFormat}},
-		{params:SpanReaderParams{Client:client, Logger: logger, MetricsFactory: metricsFactory,
-			IndexPrefix:"", UseReadWriteAliases: true},
-			indices: []string{spanIndex+"read"}},
-		{params:SpanReaderParams{Client:client, Logger: logger, MetricsFactory: metricsFactory,
-			IndexPrefix:"foo:", Archive: false},
-			indices: []string{"foo:"+indexPrefixSeparator+spanIndex+dateFormat,"foo:"+indexPrefixSeparatorDeprecated+spanIndex+dateFormat}},
-		{params:SpanReaderParams{Client:client, Logger: logger, MetricsFactory: metricsFactory,
-			IndexPrefix:"foo:", UseReadWriteAliases: true},
-			indices: []string{"foo:-"+spanIndex+"read", "foo::"+spanIndex+"read"}},
-		{params:SpanReaderParams{Client:client, Logger: logger, MetricsFactory: metricsFactory,
-			IndexPrefix:"", Archive: true},
-			indices: []string{spanIndex+archiveIndexSuffix}},
-		{params:SpanReaderParams{Client:client, Logger: logger, MetricsFactory: metricsFactory,
-			IndexPrefix:"foo:", Archive: true},
-			indices: []string{"foo:"+indexPrefixSeparator+spanIndex+archiveIndexSuffix}},
-		{params:SpanReaderParams{Client:client, Logger: logger, MetricsFactory: metricsFactory,
-			IndexPrefix:"foo:", Archive: true, UseReadWriteAliases:true},
-			indices: []string{"foo:"+indexPrefixSeparator+spanIndex+archiveReadIndexSuffix}},
+		{params: SpanReaderParams{Client: client, Logger: logger, MetricsFactory: metricsFactory,
+			IndexPrefix: "", Archive: false},
+			indices: []string{spanIndex + dateFormat}},
+		{params: SpanReaderParams{Client: client, Logger: logger, MetricsFactory: metricsFactory,
+			IndexPrefix: "", UseReadWriteAliases: true},
+			indices: []string{spanIndex + "read"}},
+		{params: SpanReaderParams{Client: client, Logger: logger, MetricsFactory: metricsFactory,
+			IndexPrefix: "foo:", Archive: false},
+			indices: []string{"foo:" + indexPrefixSeparator + spanIndex + dateFormat, "foo:" + indexPrefixSeparatorDeprecated + spanIndex + dateFormat}},
+		{params: SpanReaderParams{Client: client, Logger: logger, MetricsFactory: metricsFactory,
+			IndexPrefix: "foo:", UseReadWriteAliases: true},
+			indices: []string{"foo:-" + spanIndex + "read", "foo::" + spanIndex + "read"}},
+		{params: SpanReaderParams{Client: client, Logger: logger, MetricsFactory: metricsFactory,
+			IndexPrefix: "", Archive: true},
+			indices: []string{spanIndex + archiveIndexSuffix}},
+		{params: SpanReaderParams{Client: client, Logger: logger, MetricsFactory: metricsFactory,
+			IndexPrefix: "foo:", Archive: true},
+			indices: []string{"foo:" + indexPrefixSeparator + spanIndex + archiveIndexSuffix}},
+		{params: SpanReaderParams{Client: client, Logger: logger, MetricsFactory: metricsFactory,
+			IndexPrefix: "foo:", Archive: true, UseReadWriteAliases: true},
+			indices: []string{"foo:" + indexPrefixSeparator + spanIndex + archiveReadIndexSuffix}},
 	}
 	for _, testCase := range testCases {
 		r := NewSpanReader(testCase.params)
@@ -347,15 +347,20 @@ func TestSpanReader_esJSONtoJSONSpanModelError(t *testing.T) {
 }
 
 func TestSpanReaderFindIndices(t *testing.T) {
-	today := time.Date(1995, time.April, 21, 4, 12, 19, 95, time.UTC)
-	yesterday := today.AddDate(0, 0, -1)
-	twoDaysAgo := today.AddDate(0, 0, -2)
+	today := time.Date(1995, time.April, 21, 0, 12, 19, 95, time.UTC)
 
 	testCases := []struct {
 		startTime time.Time
 		endTime   time.Time
 		expected  []string
 	}{
+		{
+			startTime: today,
+			endTime:   today,
+			expected: []string{
+				indexWithDate(spanIndex, today),
+			},
+		},
 		{
 			startTime: today.Add(-time.Millisecond),
 			endTime:   today,
@@ -364,20 +369,20 @@ func TestSpanReaderFindIndices(t *testing.T) {
 			},
 		},
 		{
-			startTime: today.Add(-13 * time.Hour),
+			startTime: today.Add(-time.Hour),
 			endTime:   today,
 			expected: []string{
 				indexWithDate(spanIndex, today),
-				indexWithDate(spanIndex, yesterday),
+				indexWithDate(spanIndex, today.Add(-time.Hour)),
 			},
 		},
 		{
-			startTime: today.Add(-48 * time.Hour),
+			startTime: today.Add(-2 * time.Hour),
 			endTime:   today,
 			expected: []string{
 				indexWithDate(spanIndex, today),
-				indexWithDate(spanIndex, yesterday),
-				indexWithDate(spanIndex, twoDaysAgo),
+				indexWithDate(spanIndex, today.Add(-time.Hour)),
+				indexWithDate(spanIndex, today.Add(-2 * time.Hour)),
 			},
 		},
 	}
@@ -392,7 +397,7 @@ func TestSpanReaderFindIndices(t *testing.T) {
 func TestSpanReader_indexWithDate(t *testing.T) {
 	withSpanReader(func(r *spanReaderTest) {
 		actual := indexWithDate(spanIndex, time.Date(1995, time.April, 21, 4, 21, 19, 95, time.UTC))
-		assert.Equal(t, "jaeger-span-1995-04-21", actual)
+		assert.Equal(t, "jaeger-span-1995-04-21-04", actual)
 	})
 }
 
