@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +19,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"github.com/uber/tchannel-go"
+	tchannel "github.com/uber/tchannel-go"
 	"go.uber.org/zap"
 
 	"github.com/jaegertracing/jaeger/pkg/discovery"

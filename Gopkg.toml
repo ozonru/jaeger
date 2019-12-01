@@ -25,11 +25,22 @@
 #   unused-packages = true
 
 required = [
+    "github.com/securego/gosec/cmd/gosec",
+    "honnef.co/go/tools/cmd/staticcheck",
     "github.com/golang/protobuf/protoc-gen-go",
     "github.com/gogo/protobuf/protoc-gen-gogo",
     "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway",
-    "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
+    "github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger",
+    "github.com/russross/blackfriday"
 ]
+
+[[constraint]]
+  name = "github.com/securego/gosec"
+  version = "1.3.0"
+
+[[constraint]]
+  name = "honnef.co/go/tools"
+  version = "2019.1.1"
 
 [[constraint]]
   name = "github.com/apache/thrift"
@@ -38,6 +49,23 @@ required = [
 [[constraint]]
   name = "github.com/bsm/sarama-cluster"
   version = "=2.1.13"
+
+# Pinned because the latest 0.0.5 version depends on blackfriday/v2 (see below).
+[[constraint]]
+  name = "github.com/spf13/cobra"
+  version = "=0.0.1"
+
+# blackfriday 2.x uses go modules and is imported by go-md2man as via /v2 path,
+# which does not actually exist in the repo (`go mod` makes it up!). So it's not
+# compatible with dep.
+[[override]]
+  name = "github.com/russross/blackfriday"
+  version = "^1"
+
+# pinned because of blackfriday above
+[[override]]
+  name = "github.com/cpuguy83/go-md2man"
+  version = "^1"
 
 [[constraint]]
   branch = "master"
@@ -61,11 +89,7 @@ required = [
 
 [[constraint]]
   name = "github.com/prometheus/client_golang"
-  version = "^0.8.0"
-
-[[constraint]]
-  name = "github.com/spf13/cobra"
-  version = "^0.0.1"
+  version = "^1"
 
 [[constraint]]
   name = "github.com/spf13/pflag"
@@ -81,11 +105,11 @@ required = [
 
 [[constraint]]
   name = "github.com/uber/jaeger-client-go"
-  revision = "6733ee486c780528f2c8088305e16fdb685134c7"
+  version = "^2.19.0"
 
 [[constraint]]
   name = "github.com/uber/jaeger-lib"
-  version = "^2.0.0"
+  version = "^2.2"
 
 [[constraint]]
   name = "github.com/uber/tchannel-go"
@@ -97,11 +121,15 @@ required = [
 
 [[constraint]]
   name = "google.golang.org/grpc"
-  version = "^1.13.0"
+  version = "^1.20.1"
 
 [[constraint]]
-  name = "gopkg.in/olivere/elastic.v5"
-  version = "^5.0.53"
+  name = "gopkg.in/yaml.v2"
+  version = "^2.2.4"
+
+[[constraint]]
+  name = "github.com/olivere/elastic"
+  version = "^6.2.22"
 
 [[constraint]]
   name = "github.com/gocql/gocql"
@@ -113,16 +141,49 @@ required = [
 
 [[constraint]]
   name = "github.com/gogo/protobuf"
-  revision = "fd9a4790f3963525fb889cc00e0a8f828e0b3a29"
+  revision = "ba06b47c162d49f2af050fb4c75bcbc86a159d5c"
+
+[[constraint]]
+  name = "github.com/dgraph-io/badger"
+  version = "=1.5.3"
 
 [prune]
   go-tests = true
   unused-packages = true
+  [[prune.project]]
+    name = "github.com/gogo/protobuf"
+    unused-packages = false
+  [[prune.project]]
+    name = "github.com/grpc-ecosystem/grpc-gateway"
+    unused-packages = false
+  [[prune.project]]
+      name = "github.com/gogo/googleapis"
+      unused-packages = false
 
 [[constraint]]
   name = "github.com/Shopify/sarama"
-  version = "1.20.1"
+  revision = "cd910a683f9faa57222e5120d17b60d2e65f7fa9"
 
 [[constraint]]
   name = "github.com/grpc-ecosystem/go-grpc-middleware"
   version = "1.0.0"
+
+[[constraint]]
+  name = "github.com/soheilhy/cmux"
+  version = "0.1.4"
+
+[[constraint]]
+  name = "github.com/rs/cors"
+  version = "1.3.0"
+
+[[constraint]]
+  name = "github.com/hashicorp/go-plugin"
+  version = "1.0.0"
+
+[[constraint]]
+  name = "github.com/hashicorp/go-hclog"
+  version = "0.8.0"
+
+[[override]]
+  name = "github.com/Shopify/sarama"
+  revision = "cd910a683f9faa57222e5120d17b60d2e65f7fa9"

@@ -13,9 +13,12 @@ We gratefully welcome improvements to documentation as well as to code.
 
 ## Getting Started
 
+### Pre-requisites
+* Install [Go](https://golang.org/doc/install) and setup GOPATH and add $GOPATH/bin in PATH 
+
 This library uses [dep](https://golang.github.io/dep) to manage dependencies.
 
-To get started, make sure you clone the Git repository into the correct location `github.com/jaegertracing/jaeger` relative to `$GOPATH`:
+To get started, make sure you clone the Git repository into the correct location `$GOPATH/github.com/jaegertracing/jaeger`:
 
 ```
 mkdir -p $GOPATH/src/github.com/jaegertracing
@@ -29,12 +32,13 @@ Then install dependencies and run the tests:
 ```
 git submodule update --init --recursive
 dep ensure
+make install-tools
 make test
 ```
 
 ### Running local build with the UI
 
-The `jaeger-ui` submodule contains the source code for the UI assets (requires Node.js 6+). The assets must be compiled first with `make build_ui`, which runs Node.js build and then packages the assets into a Go file that is `.gitignore`-ed. The packaged assets can be enabled by providing a build tag `ui`, e.g.:
+The `jaeger-ui` submodule contains the source code for the UI assets (requires Node.js 6+). The assets must be compiled first with `make build-ui`, which runs Node.js build and then packages the assets into a Go file that is `.gitignore`-ed. The packaged assets can be enabled by providing a build tag `ui`, e.g.:
 
 ```
 $ go run -tags ui ./cmd/all-in-one/main.go
@@ -88,18 +92,19 @@ github.com/jaegertracing/jaeger
   mkdocs.yml                - MkDocs builds the documentation in docs/
 ```
 
-  * Note 1: `pkg` is a collection of utility packages used by the Jaeger components
-    without being specific to its internals. Utility packages are kept separate from
-    the Jaeger core codebase to keep it as small and concise as possible. If some
-    utilities grow larger and their APIs stabilize, they may be moved to their own
-    repository, to facilitate re-use by other projects.
+- Note 1: `pkg` is a collection of utility packages used by the Jaeger components
+  without being specific to its internals. Utility packages are kept separate from
+  the Jaeger core codebase to keep it as small and concise as possible. If some
+  utilities grow larger and their APIs stabilize, they may be moved to their own
+  repository, to facilitate re-use by other projects.
 
 ## Imports grouping
 
 This projects follows the following pattern for grouping imports in Go files:
-  * imports from standard library
-  * imports from other projects
-  * imports from `jaeger` project
+
+- imports from standard library
+- imports from other projects
+- imports from `jaeger` project
 
 For example:
 
@@ -114,4 +119,36 @@ import (
 	"github.com/jaegertracing/jaeger/cmd/collector/app/builder"
 )
 ```
+
+## Testing guidelines
+
+We strive to maintain as high code coverage as possible. Since `go test` command does not generate
+code coverage information for packages that have no test files, we have a build step (`make nocover`)
+that breaks the build when such packages are discovered, with an error like this:
+
+```
+error: at least one *_test.go file must be in all directories with go files
+       so that they are counted for code coverage.
+       If no tests are possible for a package (e.g. it only defines types), create empty_test.go
+```
+
+There are conditions that cannot be tested without external dependencies, such as a function that
+creates a gocql.Session, because it requires an active connection to Cassandra database. It is
+recommended to isolate such functions in a separate package with bare minimum of code and add a
+file `.nocover` to exclude the package from coverage calculations. The file should contain
+a comment explaining why it is there, for example:
+
+```
+$ cat ./pkg/cassandra/config/.nocover
+requires connection to Cassandra
+```
+
+## Merging PRs
+Before merging a PR make sure:
+* the title is descriptive and follows [a good commit message](./CONTRIBUTING_GUIDELINES.md)
+* pull request is assigned to the current release milestone
+* add `changelog:*` and other labels
+
+Merge the PR by using "Squash and merge" option on Github. Avoid creating merge commits.
+After the merge make sure referenced issues were closed.
 

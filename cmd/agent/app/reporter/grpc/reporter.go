@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -54,8 +55,8 @@ func (r *Reporter) EmitBatch(b *thrift.Batch) error {
 
 // EmitZipkinBatch implements EmitZipkinBatch() of Reporter
 func (r *Reporter) EmitZipkinBatch(zSpans []*zipkincore.Span) error {
-	for _, zSpan := range zSpans {
-		zSpan = r.sanitizer.Sanitize(zSpan)
+	for i := range zSpans {
+		zSpans[i] = r.sanitizer.Sanitize(zSpans[i])
 	}
 	trace, err := zipkin.ToDomain(zSpans)
 	if err != nil {

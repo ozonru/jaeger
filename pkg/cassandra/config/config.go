@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -32,11 +33,13 @@ type Configuration struct {
 	LocalDC              string        `yaml:"local_dc"`
 	ConnectionsPerHost   int           `validate:"min=1" yaml:"connections_per_host"`
 	Timeout              time.Duration `validate:"min=500"`
+	ConnectTimeout       time.Duration `yaml:"connect_timeout"`
 	ReconnectInterval    time.Duration `validate:"min=500" yaml:"reconnect_interval"`
 	SocketKeepAlive      time.Duration `validate:"min=0" yaml:"socket_keep_alive"`
 	MaxRetryAttempts     int           `validate:"min=0" yaml:"max_retry_attempt"`
 	ProtoVersion         int           `yaml:"proto_version"`
 	Consistency          string        `yaml:"consistency"`
+	DisableCompression   bool          `yaml:"disable-compression"`
 	Port                 int           `yaml:"port"`
 	Authenticator        Authenticator `yaml:"authenticator"`
 	DisableAutoDiscovery bool          `yaml:"disable_auto_discovery"`
@@ -115,6 +118,7 @@ func (c *Configuration) NewCluster() *gocql.ClusterConfig {
 	cluster.Keyspace = c.Keyspace
 	cluster.NumConns = c.ConnectionsPerHost
 	cluster.Timeout = c.Timeout
+	cluster.ConnectTimeout = c.ConnectTimeout
 	cluster.ReconnectInterval = c.ReconnectInterval
 	cluster.SocketKeepalive = c.SocketKeepAlive
 	if c.ProtoVersion > 0 {
@@ -126,7 +130,11 @@ func (c *Configuration) NewCluster() *gocql.ClusterConfig {
 	if c.Port != 0 {
 		cluster.Port = c.Port
 	}
-	cluster.Compressor = gocql.SnappyCompressor{}
+
+	if !c.DisableCompression {
+		cluster.Compressor = gocql.SnappyCompressor{}
+	}
+
 	if c.Consistency == "" {
 		cluster.Consistency = gocql.LocalOne
 	} else {

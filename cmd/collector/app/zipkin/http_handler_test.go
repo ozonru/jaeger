@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +18,7 @@ package zipkin
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -25,14 +27,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	jaegerClient "github.com/uber/jaeger-client-go"
 	zipkinTransport "github.com/uber/jaeger-client-go/transport/zipkin"
-	tchanThrift "github.com/uber/tchannel-go/thrift"
 
+	"github.com/jaegertracing/jaeger/cmd/collector/app"
 	zipkinTrift "github.com/jaegertracing/jaeger/model/converter/thrift/zipkin"
+	zipkinProto "github.com/jaegertracing/jaeger/proto-gen/zipkin"
 	"github.com/jaegertracing/jaeger/thrift-gen/zipkincore"
 )
 
@@ -44,7 +48,7 @@ type mockZipkinHandler struct {
 	spans []*zipkincore.Span
 }
 
-func (p *mockZipkinHandler) SubmitZipkinBatch(ctx tchanThrift.Context, spans []*zipkincore.Span) ([]*zipkincore.Response, error) {
+func (p *mockZipkinHandler) SubmitZipkinBatch(spans []*zipkincore.Span, opts app.SubmitBatchOptions) ([]*zipkincore.Response, error) {
 	p.mux.Lock()
 	defer p.mux.Unlock()
 	p.spans = append(p.spans, spans...)
@@ -274,6 +278,55 @@ func TestSaveSpansV2(t *testing.T) {
 	}
 	handler.zipkinSpansHandler.(*mockZipkinHandler).err = fmt.Errorf("Bad times ahead")
 	statusCode, resBody, err := postBytes(server.URL+`/api/v2/spans`, []byte(`[{"id":"1111111111111111", "traceId":"1111111111111111"}]`), createHeader("application/json"))
+	require.NoError(t, err)
+	assert.EqualValues(t, http.StatusInternalServerError, statusCode)
+	assert.EqualValues(t, "Cannot submit Zipkin batch: Bad times ahead\n", resBody)
+}
+
+func TestSaveProtoSpansV2(t *testing.T) {
+	server, handler := initializeTestServer(nil)
+	defer server.Close()
+
+	validID := randBytesOfLen(8)
+	validTraceID := randBytesOfLen(16)
+	tests := []struct {
+		Span       zipkinProto.Span
+		StatusCode int
+		resBody    string
+	}{
+		{Span: zipkinProto.Span{Id: validID, TraceId: validTraceID, LocalEndpoint: &zipkinProto.Endpoint{Ipv4: randBytesOfLen(4)}, Kind: zipkinProto.Span_CLIENT}, StatusCode: http.StatusAccepted},
+		{Span: zipkinProto.Span{Id: randBytesOfLen(4)}, StatusCode: http.StatusBadRequest, resBody: "Unable to process request body: invalid length for SpanID\n"},
+		{Span: zipkinProto.Span{Id: validID, TraceId: randBytesOfLen(32)}, StatusCode: http.StatusBadRequest, resBody: "Unable to process request body: invalid length for TraceID\n"},
+		{Span: zipkinProto.Span{Id: validID, TraceId: validTraceID, ParentId: randBytesOfLen(16)}, StatusCode: http.StatusBadRequest, resBody: "Unable to process request body: invalid length for SpanID\n"},
+		{Span: zipkinProto.Span{Id: validID, TraceId: validTraceID, LocalEndpoint: &zipkinProto.Endpoint{Ipv4: randBytesOfLen(2)}}, StatusCode: http.StatusBadRequest, resBody: "Unable to process request body: wrong Ipv4\n"},
+	}
+	for _, test := range tests {
+		l := zipkinProto.ListOfSpans{
+			Spans: []*zipkinProto.Span{&test.Span},
+		}
+		reqBytes, _ := proto.Marshal(&l)
+		statusCode, resBody, err := postBytes(server.URL+`/api/v2/spans`, reqBytes, createHeader("application/x-protobuf"))
+		require.NoError(t, err)
+		assert.EqualValues(t, test.StatusCode, statusCode)
+		assert.EqualValues(t, test.resBody, resBody)
+	}
+
+	l := zipkinProto.ListOfSpans{}
+	reqBytes, _ := proto.Marshal(&l)
+	statusCode, _, err := postBytes(server.URL+`/api/v2/spans`, reqBytes, createHeader("application/x-protobuf"))
+	require.NoError(t, err)
+	assert.EqualValues(t, http.StatusAccepted, statusCode)
+
+	invalidSpans := struct{ Key string }{Key: "foo"}
+	reqBytes, _ = json.Marshal(&invalidSpans)
+	statusCode, resBody, err := postBytes(server.URL+`/api/v2/spans`, reqBytes, createHeader("application/x-protobuf"))
+	require.NoError(t, err)
+	assert.EqualValues(t, http.StatusBadRequest, statusCode)
+	assert.EqualValues(t, "Unable to process request body: unexpected EOF\n", resBody)
+
+	reqBytes, _ = proto.Marshal(&zipkinProto.ListOfSpans{Spans: []*zipkinProto.Span{{Id: validID, TraceId: validTraceID}}})
+	handler.zipkinSpansHandler.(*mockZipkinHandler).err = fmt.Errorf("Bad times ahead")
+	statusCode, resBody, err = postBytes(server.URL+`/api/v2/spans`, reqBytes, createHeader("application/x-protobuf"))
 	require.NoError(t, err)
 	assert.EqualValues(t, http.StatusInternalServerError, statusCode)
 	assert.EqualValues(t, "Cannot submit Zipkin batch: Bad times ahead\n", resBody)

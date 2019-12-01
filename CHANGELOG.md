@@ -1,7 +1,234 @@
 Changes by Version
 ==================
 
-1.12.0 (unreleased)
+1.16.0 (unreleased)
+------------------
+
+#### Backend Changes
+
+##### Breaking Changes
+
+* Changes to the endpoints that returns a list of operations ([#1943](https://github.com/jaegertracing/jaeger/pull/1943), [@guo0693](https://github.com/guo0693))
+    * Endpoint changes:
+        * Both Http & gRPC servers now take new optional parameter `spanKind` in addition to `service`. When spanKind
+         is absent or empty, operations from all kinds of spans will be returned.
+        * Instead of returning a list of string, both Http & gRPC servers return a list of operation struct. Please 
+        update your client code to process the new response. Example response:
+            ```
+            curl 'http://localhost:6686/api/operations?service=UserService&spanKind=server' | jq
+            {
+                "data": [{
+                    "name": "UserService::getExtendedUser",
+                    "spanKind": "server"
+                },
+                {
+                    "name": "UserService::getUserProfile",
+                    "spanKind": "server"
+                }],
+                "total": 2,
+                "limit": 0,
+                "offset": 0,
+                "errors": null
+            }
+            ```
+        * The legacy http endpoint stay untouched:
+            ```
+            /services/{%s}/operations
+            ```    
+    * Storage plugin changes:
+        * Memory updated to support spanKind on write & read, no migration is required.
+        * [Badger](https://github.com/jaegertracing/jaeger/issues/1922) & [ElasticSearch](https://github.com/jaegertracing/jaeger/issues/1923) 
+        to be implemented:  
+        For now `spanKind` will be set as empty string during read & write, only `name` will be valid operation name.
+        * Cassandra updated to support spanKind on write & read ([#1937](https://github.com/jaegertracing/jaeger/pull/1937), [@guo0693](https://github.com/guo0693)):  
+            If you don't run the migration script, nothing will break, the system will used the old table 
+            `operation_names` and set empty `spanKind` in the response.  
+            Steps to get the updated functionality:
+            1.  You will need to run below command on the host you can use `cqlsh` to connect the the cassandra contact
+             point
+                ```
+                KEYSPACE=jaeger_v1 CQL_CMD='cqlsh host 9042 -u test_user -p test_password --request-timeout=3000' 
+                bash ./v002tov003.sh
+                ```
+                The script will create new table `operation_names_v2` and migrate data from the old table.  
+                `spanKind` column will be empty for those data.  
+                At the end, it will ask you whether you want to drop the old table or not.
+            2. Restart ingester & query services so that they begin to use the new table
+##### New Features
+
+##### Bug fixes, Minor Improvements
+
+#### UI Changes
+
+
+1.15.1 (2019-11-07)
+------------------
+
+##### Bug fixes, Minor Improvements
+
+* Build platform binaries as part of CI ([#1909](https://github.com/jaegertracing/jaeger/pull/1909), [@yurishkuro](https://github.com/yurishkuro))
+* Upgrade and fix dependencies ([#1907](https://github.com/jaegertracing/jaeger/pull/1907), [@yurishkuro](https://github.com/yurishkuro))
+
+
+1.15.0 (2019-11-07)
+------------------
+
+#### Backend Changes
+
+##### Breaking Changes
+
+* The default value for the Ingester's flag `ingester.deadlockInterval` has been changed to `0` ([#1868](https://github.com/jaegertracing/jaeger/pull/1868), [@jpkrohling](https://github.com/jpkrohling))
+
+  With the new default, the ingester won't `panic` if there are no messages for the last minute. To restore the previous behavior, set the flag's value to `1m`.
+
+* Mark `--collector.grpc.tls.client.ca` flag as deprecated for jaeger-collector. ([#1840](https://github.com/jaegertracing/jaeger/pull/1840), [@yurishkuro](https://github.com/yurishkuro))
+
+  The deprecated flag will still work until being removed, it's recommended to use `--collector.grpc.tls.client-ca` instead.
+
+##### New Features
+
+* Support TLS for Kafka ([#1414](https://github.com/jaegertracing/jaeger/pull/1414), [@MichaHoffmann](https://github.com/MichaHoffmann))
+* Add ack and compression parameters for Kafka #1359 ([#1712](https://github.com/jaegertracing/jaeger/pull/1712), [@chandresh-pancholi](https://github.com/chandresh-pancholi))
+* Propagate the bearer token to the gRPC plugin server ([#1822](https://github.com/jaegertracing/jaeger/pull/1822), [@radekg](https://github.com/radekg))
+* Add Truncate and ReadOnly options for badger ([#1842](https://github.com/jaegertracing/jaeger/pull/1842), [@burmanm](https://github.com/burmanm))
+
+##### Bug fixes, Minor Improvements
+
+* Use correct context on ES search methods ([#1850](https://github.com/jaegertracing/jaeger/pull/1850), [@rubenvp8510](https://github.com/rubenvp8510))
+* Handling of expected error codes coming from grpc storage plugins #1741 ([#1814](https://github.com/jaegertracing/jaeger/pull/1814), [@chandresh-pancholi](https://github.com/chandresh-pancholi))
+* Fix ordering of indexScanKeys after TraceID parsing ([#1809](https://github.com/jaegertracing/jaeger/pull/1809), [@burmanm](https://github.com/burmanm))
+* Small memory optimizations in badger write-path ([#1771](https://github.com/jaegertracing/jaeger/pull/1771), [@burmanm](https://github.com/burmanm))
+* Set an empty value when a default env var value is missing ([#1777](https://github.com/jaegertracing/jaeger/pull/1777), [@jpkrohling](https://github.com/jpkrohling))
+* Decouple storage dependencies and bump Go to 1.13.x ([#1886](https://github.com/jaegertracing/jaeger/pull/1886), [@yurishkuro](https://github.com/yurishkuro))
+* Update gopkg.in/yaml.v2 dependency to v2.2.4 ([#1865](https://github.com/jaegertracing/jaeger/pull/1865), [@objectiser](https://github.com/objectiser))
+* Upgrade jaeger-client 2.19 and jaeger-lib 2.2 and prom client 1.x ([#1810](https://github.com/jaegertracing/jaeger/pull/1810), [@yurishkuro](https://github.com/yurishkuro))
+* Unpin grpc version and use serviceConfig to set the load balancer  ([#1786](https://github.com/jaegertracing/jaeger/pull/1786), [@guanw](https://github.com/guanw))
+
+#### UI Changes
+
+* UI pinned to version 1.5.0. The changelog is available here [v1.5.0](https://github.com/jaegertracing/jaeger-ui/blob/master/CHANGELOG.md#v150-november-4-2019)
+
+1.14.0 (2019-09-02)
+------------------
+
+#### Backend Changes
+
+##### Breaking Changes
+
+* Create ES index templates instead of indices ([#1627](https://github.com/jaegertracing/jaeger/pull/1627), [@pavolloffay](https://github.com/pavolloffay))
+
+  This can break existing Elasticsearch deployments if security policies are applied.
+  For instance Jaeger `X-Pack` configuration now requires permission to create index templates - `manage_index_templates`.
+
+##### New Features
+
+* Add Elasticsearch version configuration to rollover script ([#1769](https://github.com/jaegertracing/jaeger/pull/1769), [@pavolloffay](https://github.com/pavolloffay))
+* Add Elasticsearch version flag ([#1753](https://github.com/jaegertracing/jaeger/pull/1753), [@pavolloffay](https://github.com/pavolloffay))
+* Add Elasticsearch 7 support ([#1690](https://github.com/jaegertracing/jaeger/pull/1690), [@gregoryfranklin](https://github.com/gregoryfranklin))
+
+  The index mappings in Elasticsearch 7 are not backwards compatible with the older versions.
+  Therefore using Elasticsearch 7 with data created with older version would not work.
+  Elasticsearch 6.8 supports 7.x, 6.x, 5.x compatible mappings. The upgrade has to be done
+  first to ES 6.8, then apply data migration or wait until old daily indices are removed (this requires
+  to start Jaeger with `--es.version=7` to force using ES 7.x mappings for newly created indices).
+
+  Jaeger by default uses Elasticsearch ping endpoint (`/`) to derive the version which is used
+  for index mappings selection. The version can be overridden by flag `--es.version`.
+
+* Support for Zipkin Protobuf spans over HTTP ([#1695](https://github.com/jaegertracing/jaeger/pull/1695), [@jan25](https://github.com/jan25))
+* Added support for hot reload of UI config ([#1688](https://github.com/jaegertracing/jaeger/pull/1688), [@jpkrohling](https://github.com/jpkrohling))
+* Added base Grafana dashboard and Alert rules ([#1745](https://github.com/jaegertracing/jaeger/pull/1745), [@jpkrohling](https://github.com/jpkrohling))
+* Add the jaeger-mixin for monitoring ([#1668](https://github.com/jaegertracing/jaeger/pull/1668), [@gouthamve](https://github.com/gouthamve))
+* Added flags for driving cassandra connection compression through config ([#1675](https://github.com/jaegertracing/jaeger/pull/1675), [@sagaranand015](https://github.com/sagaranand015))
+* Support index cleaner for rollover indices and add integration tests ([#1689](https://github.com/jaegertracing/jaeger/pull/1689), [@pavolloffay](https://github.com/pavolloffay))
+* Add client TLS auth to gRPC reporter ([#1591](https://github.com/jaegertracing/jaeger/pull/1591), [@tcolgate](https://github.com/tcolgate))
+* Collector kafka producer protocol version config ([#1658](https://github.com/jaegertracing/jaeger/pull/1658), [@marqc](https://github.com/marqc))
+* Configurable kafka protocol version for msg consuming by jaeger ingester ([#1640](https://github.com/jaegertracing/jaeger/pull/1640), [@marqc](https://github.com/marqc))
+* Use credentials when describing keyspaces in cassandra schema builder ([#1655](https://github.com/jaegertracing/jaeger/pull/1655), [@MiLk](https://github.com/MiLk))
+* Add connect-timeout for Cassandra ([#1647](https://github.com/jaegertracing/jaeger/pull/1647), [@sagaranand015](https://github.com/sagaranand015))
+
+##### Bug fixes, Minor Improvements
+
+* Fix gRPC over cmux and add unit tests ([#1758](https://github.com/jaegertracing/jaeger/pull/1758), [@yurishkuro](https://github.com/yurishkuro))
+* Add CA certificates to agent image ([#1764](https://github.com/jaegertracing/jaeger/pull/1764), [@yurishkuro](https://github.com/yurishkuro))
+* Fix badger merge-join algorithm to correctly filter indexes ([#1721](https://github.com/jaegertracing/jaeger/pull/1721), [@burmanm](https://github.com/burmanm))
+* Change Zipkin CORS origins and headers to comma separated list ([#1556](https://github.com/jaegertracing/jaeger/pull/1556), [@JonasVerhofste](https://github.com/JonasVerhofste))
+* Added null guards to 'Process' when processing an incoming span ([#1723](https://github.com/jaegertracing/jaeger/pull/1723), [@jpkrohling](https://github.com/jpkrohling))
+* Export expvar metrics of badger to the metricsFactory ([#1704](https://github.com/jaegertracing/jaeger/pull/1704), [@burmanm](https://github.com/burmanm))
+* Pass TTL as int, not as float64 ([#1710](https://github.com/jaegertracing/jaeger/pull/1710), [@yurishkuro](https://github.com/yurishkuro))
+* Use find by regex for archive index in index cleaner ([#1693](https://github.com/jaegertracing/jaeger/pull/1693), [@pavolloffay](https://github.com/pavolloffay))
+* Allow token propagation if token type is not specified ([#1685](https://github.com/jaegertracing/jaeger/pull/1685), [@rubenvp8510](https://github.com/rubenvp8510))
+* Fix duplicated spans when querying Elasticsearch ([#1677](https://github.com/jaegertracing/jaeger/pull/1677), [@pavolloffay](https://github.com/pavolloffay))
+* Fix the threshold precision issue ([#1665](https://github.com/jaegertracing/jaeger/pull/1665), [@guanw](https://github.com/guanw))
+* Badger filter duplicate results from a single indexSeek ([#1649](https://github.com/jaegertracing/jaeger/pull/1649), [@burmanm](https://github.com/burmanm))
+* Badger make default dirs work in Windows ([#1653](https://github.com/jaegertracing/jaeger/pull/1653), [@burmanm](https://github.com/burmanm))
+
+#### UI Changes
+
+* UI pinned to version 1.4.0. The changelog is available here [v1.4.0](https://github.com/jaegertracing/jaeger-ui/blob/master/CHANGELOG.md#v130-june-21-2019)
+
+1.13.1 (2019-06-28)
+------------------
+
+#### Backend Changes
+
+##### Breaking Changes
+
+##### New Features
+
+##### Bug fixes, Minor Improvements
+
+* Change default for bearer-token-propagation to false ([#1642](https://github.com/jaegertracing/jaeger/pull/1642), [@wsoula](https://github.com/wsoula))
+
+#### UI Changes
+
+1.13.0 (2019-06-27)
+------------------
+
+#### Backend Changes
+
+##### Breaking Changes
+
+* The traces related metrics on collector now have a new tag `sampler_type` ([#1576](https://github.com/jaegertracing/jaeger/pull/1576), [@guanw](https://github.com/guanw))
+
+  This might break some existing metrics dashboard (if so, users need to update query to aggregate over this new tag).
+
+  The list of metrics affected: `traces.received`, `traces.rejected`, `traces.saved-by-svc`.
+
+* Remove deprecated index prefix separator `:` from Elastic ([#1620](https://github.com/jaegertracing/jaeger/pull/1620), [@pavolloffay](https://github.com/pavolloffay))
+
+  In Jaeger 1.9.0 release the Elasticsearch index separator was changed from `:` to `-`. To keep backwards
+  compatibility the query service kept querying indices with `:` separator, however the new indices
+  were created only with `-`. This release of Jaeger removes the query capability for indices containing `:`,
+  therefore it's recommended to keep using older version until indices containing old separator are
+  not queried anymore.
+
+##### New Features
+
+* Passthrough OAuth bearer token supplied to Query service through to ES storage ([#1599](https://github.com/jaegertracing/jaeger/pull/1599), [@rubenvp8510](https://github.com/rubenvp8510))
+* Kafka kerberos authentication support for collector/ingester ([#1589](https://github.com/jaegertracing/jaeger/pull/1589), [@rubenvp8510](https://github.com/rubenvp8510))
+* Allow Cassandra schema builder to use credentials ([#1635](https://github.com/jaegertracing/jaeger/pull/1635), [@PS-EGHornbostel](https://github.com/PS-EGHornbostel))
+* Add docs generation command ([#1572](https://github.com/jaegertracing/jaeger/pull/1572), [@pavolloffay](https://github.com/pavolloffay))
+
+##### Bug fixes, Minor Improvements
+
+* Fix data race between `Agent.Run()` and `Agent.Stop()` ([#1625](https://github.com/jaegertracing/jaeger/pull/1625), [@tigrannajaryan](https://github.com/tigrannajaryan))
+* Use json number when unmarshalling data from ES ([#1618](https://github.com/jaegertracing/jaeger/pull/1618), [@pavolloffay](https://github.com/pavolloffay))
+* Define logs as nested data type ([#1622](https://github.com/jaegertracing/jaeger/pull/1622), [@pavolloffay](https://github.com/pavolloffay))
+* Fix archive storage not querying old spans older than maxSpanAge ([#1617](https://github.com/jaegertracing/jaeger/pull/1617), [@pavolloffay](https://github.com/pavolloffay))
+* Query service: fix logging errors on SIGINT ([#1601](https://github.com/jaegertracing/jaeger/pull/1601), [@jan25](https://github.com/jan25))
+* Direct grpc logs to Zap logger ([#1606](https://github.com/jaegertracing/jaeger/pull/1606), [@yurishkuro](https://github.com/yurishkuro))
+* Fix sending status to health check channel in Query service ([#1598](https://github.com/jaegertracing/jaeger/pull/1598), [@jan25](https://github.com/jan25))
+* Add tmp-volume to all-in-one image to fix badger storage ([#1571](https://github.com/jaegertracing/jaeger/pull/1571), [@burmanm](https://github.com/burmanm))
+* Do not fail es-cleaner if there are no jaeger indices ([#1569](https://github.com/jaegertracing/jaeger/pull/1569), [@pavolloffay](https://github.com/pavolloffay))
+* Automatically set `GOMAXPROCS` ([#1560](https://github.com/jaegertracing/jaeger/pull/1560), [@rubenvp8510](https://github.com/rubenvp8510))
+* Add CA certs to all-in-one image ([#1554](https://github.com/jaegertracing/jaeger/pull/1554), [@chandresh-pancholi](https://github.com/chandresh-pancholi))
+
+#### UI Changes
+
+* UI pinned to version 1.3.0. The changelog is available here [v1.3.0](https://github.com/jaegertracing/jaeger-ui/blob/master/CHANGELOG.md#v130-june-21-2019)
+
+1.12.0 (2019-05-16)
 ------------------
 
 #### Backend Changes
@@ -18,15 +245,15 @@ Changes by Version
     --ingester.encoding
     --ingester.topic
     --ingester.group-id
-    ``` 
-    
+    ```
+
     In the Collector, they are replaced by:
     ```
     --kafka.producer.brokers
     --kafka.producer.encoding
     --kafka.producer.topic
     ```
-    
+
     In the Ingester, they are replaced by:
     ```
     --kafka.consumer.brokers
@@ -35,12 +262,40 @@ Changes by Version
     --kafka.consumer.group-id
     ```
 
+* Add Admin port and group all ports in one file ([#1442](https://github.com/jaegertracing/jaeger/pull/1442), [@yurishkuro](https://github.com/yurishkuro))
+
+    This change fixes issues [#1428](https://github.com/jaegertracing/jaeger/issues/1428), [#1332](https://github.com/jaegertracing/jaeger/issues/1332) and moves all metrics endpoints from API ports to **admin ports**. It requires re-configuring Prometheus scraping rules. Each Jaeger binary has its own admin port that can be found under `--admin-http-port` command line flag by running the `${binary} help` command.
+
 ##### New Features
+
+* Add gRPC resolver using external discovery service ([#1498](https://github.com/jaegertracing/jaeger/pull/1498), [@guanw](https://github.com/guanw))
+* gRPC storage plugin framework ([#1461](https://github.com/jaegertracing/jaeger/pull/1461), [@chvck](https://github.com/chvck))
+* Supports customized kafka client id ([#1507](https://github.com/jaegertracing/jaeger/pull/1507), [@newly12](https://github.com/newly12))
+* Support gRPC for query service ([#1307](https://github.com/jaegertracing/jaeger/pull/1307), [@annanay25](https://github.com/annanay25))
+* Expose tls.InsecureSkipVerify to es.tls.* CLI flags ([#1473](https://github.com/jaegertracing/jaeger/pull/1473), [@stefanvassilev](https://github.com/stefanvassilev))
+* Return info msg for `/health` endpoint ([#1465](https://github.com/jaegertracing/jaeger/pull/1465), [@stefanvassilev](https://github.com/stefanvassilev))
+* Add pprof endpoint to admin endpoint ([#1375](https://github.com/jaegertracing/jaeger/pull/1375), [@konradgaluszka](https://github.com/konradgaluszka))
+* Add inbound transport as label to collector metrics [#1446](https://github.com/jaegertracing/jaeger/pull/1446) ([guanw](https://github.com/guanw))
+* Sorted key/value store `badger` backed storage plugin ([#760](https://github.com/jaegertracing/jaeger/pull/760), [@burmanm](https://github.com/burmanm))
+* Add Admin port and group all ports in one file ([#1442](https://github.com/jaegertracing/jaeger/pull/1442), [@yurishkuro](https://github.com/yurishkuro))
+* Adds support for agent level tag ([#1396](https://github.com/jaegertracing/jaeger/pull/1396), [@annanay25](https://github.com/annanay25))
+* Add a Downsampling writer that drop a percentage of spans ([#1353](https://github.com/jaegertracing/jaeger/pull/1353), [@guanw](https://github.com/guanw))
 
 ##### Bug fixes, Minor Improvements
 
+* Sort traces in memory store to return most recent traces ([#1394](https://github.com/jaegertracing/jaeger/pull/1394), [@jacobmarble](https://github.com/jacobmarble))
+* Add span format tag for jaeger-collector ([#1493](https://github.com/jaegertracing/jaeger/pull/1493), [@guo0693](https://github.com/guo0693))
+* Upgrade gRPC to 1.20.1 ([#1492](https://github.com/jaegertracing/jaeger/pull/1492), [@guanw](https://github.com/guanw))
+* Switch from counter to a gauge for partitions held ([#1485](https://github.com/jaegertracing/jaeger/pull/1485), [@bobrik](https://github.com/bobrik))
+* Add CORS handling for Zipkin collector service ([#1463](https://github.com/jaegertracing/jaeger/pull/1463), [@JonasVerhofste](https://github.com/JonasVerhofste))
+* Check elasticsearch nil response ([#1467](https://github.com/jaegertracing/jaeger/pull/1467), [@YEXINGZHE54](https://github.com/YEXINGZHE54))
+* Disable sampling in logger - `zap`([#1460](https://github.com/jaegertracing/jaeger/pull/1460), [@psinghal20](https://github.com/psinghal20))
+* New layout for proto definitions and generated files ([#1427](https://github.com/jaegertracing/jaeger/pull/1427), [@annanay25](https://github.com/annanay25))
+* Upgrade Go to 1.12.1 ([#1437](https://github.com/jaegertracing/jaeger/pull/1437) ,[@yurishkuro](https://github.com/yurishkuro))
+
 #### UI Changes
 
+* UI pinned to version 1.2.0. The changelog is available here [v1.2.0](https://github.com/jaegertracing/jaeger-ui/blob/master/CHANGELOG.md#v120-may-14-2019)
 
 1.11.0 (2019-03-07)
 ------------------
@@ -55,15 +310,15 @@ Changes by Version
     --kafka.brokers
     --kafka.encoding
     --kafka.topic
-    ``` 
-    
+    ```
+
     In the Collector, they are replaced by:
     ```
     --kafka.producer.brokers
     --kafka.producer.encoding
     --kafka.producer.topic
     ```
-    
+
     In the Ingester, they are replaced by:
     ```
     --kafka.consumer.brokers

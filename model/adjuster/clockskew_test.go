@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -107,7 +108,7 @@ func TestClockSkewAdjuster(t *testing.T) {
 			},
 		},
 		{
-			description: "do not ajust parent-child on the same host",
+			description: "do not adjust parent-child on the same host",
 			trace: []spanProto{
 				{id: 1, parent: 0, startTime: 10, duration: 100, host: "a", adjusted: 10},
 				{id: 2, parent: 1, startTime: 0, duration: 50, host: "a", adjusted: 0},
@@ -121,7 +122,7 @@ func TestClockSkewAdjuster(t *testing.T) {
 			},
 		},
 		{
-			description: "do not ajust child that is longer than parent",
+			description: "do not adjust child that is longer than parent",
 			trace: []spanProto{
 				{id: 1, parent: 0, startTime: 10, duration: 100, host: "a", adjusted: 10},
 				{id: 2, parent: 1, startTime: 20, duration: 150, host: "b", adjusted: 20},

@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -71,8 +72,7 @@ func TestTraceIDMarshalJSONPB(t *testing.T) {
 
 func TestTraceIDUnmarshalJSONPBErrors(t *testing.T) {
 	testCases := []struct {
-		in     string
-		hi, lo uint64
+		in string
 	}{
 		{in: ""},
 		{in: "x"},
@@ -175,7 +175,7 @@ func TestSpanIDUnmarshalJSONErrors(t *testing.T) {
 
 	err = id.UnmarshalJSONPB(nil, []byte(""))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "buffer is too short")
+	assert.Contains(t, err.Error(), "invalid length for SpanID")
 	err = id.UnmarshalJSONPB(nil, []byte("123"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "illegal base64 data")
@@ -205,6 +205,40 @@ func TestIsDebug(t *testing.T) {
 	assert.False(t, flags.IsDebug())
 	flags.SetDebug()
 	assert.True(t, flags.IsDebug())
+}
+
+func TestIsFirehoseEnabled(t *testing.T) {
+	flags := model.Flags(0)
+	assert.False(t, flags.IsFirehoseEnabled())
+	flags.SetDebug()
+	flags.SetSampled()
+	assert.False(t, flags.IsFirehoseEnabled())
+	flags.SetFirehose()
+	assert.True(t, flags.IsFirehoseEnabled())
+
+	flags = model.Flags(8)
+	assert.True(t, flags.IsFirehoseEnabled())
+}
+
+func TestGetSpanKind(t *testing.T) {
+	span := makeSpan(model.String("sampler.type", "lowerbound"))
+	spanKind, found := span.GetSpanKind()
+	assert.Equal(t, "", spanKind)
+	assert.Equal(t, false, found)
+
+	span = makeSpan(model.String("span.kind", "client"))
+	spanKind, found = span.GetSpanKind()
+	assert.Equal(t, "client", spanKind)
+	assert.Equal(t, true, found)
+}
+
+func TestSamplerType(t *testing.T) {
+	span := makeSpan(model.String("sampler.type", "lowerbound"))
+	assert.Equal(t, "lowerbound", span.GetSamplerType())
+	span = makeSpan(model.String("sampler.type", ""))
+	assert.Equal(t, "unknown", span.GetSamplerType())
+	span = makeSpan(model.KeyValue{})
+	assert.Equal(t, "unknown", span.GetSamplerType())
 }
 
 func TestIsSampled(t *testing.T) {

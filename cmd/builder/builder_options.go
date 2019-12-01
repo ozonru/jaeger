@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,7 +20,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// TODO combine with SharedFlags
+// TODO nothing but Collector uses this, move to cmd/collector/builder
 
 // BasicOptions is a set of basic building blocks for most Jaeger executables
 type BasicOptions struct {

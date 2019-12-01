@@ -17,7 +17,10 @@ package consumer
 import (
 	"io"
 
+	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
+
+	"github.com/jaegertracing/jaeger/pkg/kafka/auth"
 )
 
 // Consumer is an interface to features of Sarama that are necessary for the consumer
@@ -34,15 +37,30 @@ type Builder interface {
 
 // Configuration describes the configuration properties needed to create a Kafka consumer
 type Configuration struct {
-	Brokers []string
-	Topic   string
-	GroupID string
+	auth.AuthenticationConfig
 	Consumer
+
+	Brokers         []string
+	Topic           string
+	GroupID         string
+	ClientID        string
+	ProtocolVersion string
 }
 
 // NewConsumer creates a new kafka consumer
 func (c *Configuration) NewConsumer() (Consumer, error) {
 	saramaConfig := cluster.NewConfig()
 	saramaConfig.Group.Mode = cluster.ConsumerModePartitions
+	saramaConfig.ClientID = c.ClientID
+	if len(c.ProtocolVersion) > 0 {
+		ver, err := sarama.ParseKafkaVersion(c.ProtocolVersion)
+		if err != nil {
+			return nil, err
+		}
+		saramaConfig.Config.Version = ver
+	}
+	if err := c.AuthenticationConfig.SetConfiguration(&saramaConfig.Config); err != nil {
+		return nil, err
+	}
 	return cluster.NewConsumer(c.Brokers, c.GroupID, []string{c.Topic}, saramaConfig)
 }

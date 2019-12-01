@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,25 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/jaegertracing/jaeger/model"
-	j "github.com/jaegertracing/jaeger/thrift-gen/jaeger"
 )
-
-const (
-	millisecondsConversion = 1000
-)
-
-func spanRefsEqual(refs []*j.SpanRef, otherRefs []*j.SpanRef) bool {
-	if len(refs) != len(otherRefs) {
-		return false
-	}
-
-	for idx, ref := range refs {
-		if *ref != *otherRefs[idx] {
-			return false
-		}
-	}
-	return true
-}
 
 func TestFromDomainOneSpan(t *testing.T) {
 	spanFile := "fixtures/domain_01.json"

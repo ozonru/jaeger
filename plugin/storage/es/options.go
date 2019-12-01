@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,34 +23,38 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/jaegertracing/jaeger/pkg/es/config"
+	"github.com/jaegertracing/jaeger/storage/spanstore"
 )
 
 const (
-	suffixUsername          = ".username"
-	suffixPassword          = ".password"
-	suffixSniffer           = ".sniffer"
-	suffixTokenPath         = ".token-file"
-	suffixServerURLs        = ".server-urls"
-	suffixMaxSpanAge        = ".max-span-age"
-	suffixMaxNumSpans       = ".max-num-spans"
-	suffixNumShards         = ".num-shards"
-	suffixNumReplicas       = ".num-replicas"
-	suffixBulkSize          = ".bulk.size"
-	suffixBulkWorkers       = ".bulk.workers"
-	suffixBulkActions       = ".bulk.actions"
-	suffixBulkFlushInterval = ".bulk.flush-interval"
-	suffixTimeout           = ".timeout"
-	suffixTLS               = ".tls"
-	suffixCert              = ".tls.cert"
-	suffixKey               = ".tls.key"
-	suffixCA                = ".tls.ca"
-	suffixIndexPrefix       = ".index-prefix"
-	suffixTagsAsFields      = ".tags-as-fields"
-	suffixTagsAsFieldsAll   = suffixTagsAsFields + ".all"
-	suffixTagsFile          = suffixTagsAsFields + ".config-file"
-	suffixTagDeDotChar      = suffixTagsAsFields + ".dot-replacement"
-	suffixReadAlias         = ".use-aliases"
-	suffixEnabled           = ".enabled"
+	suffixUsername            = ".username"
+	suffixPassword            = ".password"
+	suffixSniffer             = ".sniffer"
+	suffixTokenPath           = ".token-file"
+	suffixServerURLs          = ".server-urls"
+	suffixMaxSpanAge          = ".max-span-age"
+	suffixMaxNumSpans         = ".max-num-spans"
+	suffixNumShards           = ".num-shards"
+	suffixNumReplicas         = ".num-replicas"
+	suffixBulkSize            = ".bulk.size"
+	suffixBulkWorkers         = ".bulk.workers"
+	suffixBulkActions         = ".bulk.actions"
+	suffixBulkFlushInterval   = ".bulk.flush-interval"
+	suffixTimeout             = ".timeout"
+	suffixTLS                 = ".tls"
+	suffixCert                = ".tls.cert"
+	suffixKey                 = ".tls.key"
+	suffixCA                  = ".tls.ca"
+	suffixSkipHostVerify      = ".tls.skip-host-verify"
+	suffixIndexPrefix         = ".index-prefix"
+	suffixTagsAsFields        = ".tags-as-fields"
+	suffixTagsAsFieldsAll     = suffixTagsAsFields + ".all"
+	suffixTagsFile            = suffixTagsAsFields + ".config-file"
+	suffixTagDeDotChar        = suffixTagsAsFields + ".dot-replacement"
+	suffixReadAlias           = ".use-aliases"
+	suffixCreateIndexTemplate = ".create-index-templates"
+	suffixEnabled             = ".enabled"
+	suffixVersion             = ".version"
 )
 
 // TODO this should be moved next to config.Configuration struct (maybe ./flags package)
@@ -78,19 +83,21 @@ func NewOptions(primaryNamespace string, otherNamespaces ...string) *Options {
 	options := &Options{
 		primary: &namespaceConfig{
 			Configuration: config.Configuration{
-				Username:          "",
-				Password:          "",
-				Sniffer:           false,
-				MaxSpanAge:        72 * time.Hour,
-				MaxNumSpans:       10000,
-				NumShards:         5,
-				NumReplicas:       1,
-				BulkSize:          5 * 1000 * 1000,
-				BulkWorkers:       1,
-				BulkActions:       1000,
-				BulkFlushInterval: time.Millisecond * 200,
-				TagDotReplacement: "@",
-				Enabled:           true,
+				Username:             "",
+				Password:             "",
+				Sniffer:              false,
+				MaxSpanAge:           72 * time.Hour,
+				MaxNumSpans:          10000,
+				NumShards:            5,
+				NumReplicas:          1,
+				BulkSize:             5 * 1000 * 1000,
+				BulkWorkers:          1,
+				BulkActions:          1000,
+				BulkFlushInterval:    time.Millisecond * 200,
+				TagDotReplacement:    "@",
+				Enabled:              true,
+				CreateIndexTemplates: true,
+				Version:              0,
 			},
 			servers:   "http://127.0.0.1:9200",
 			namespace: primaryNamespace,
@@ -174,6 +181,10 @@ func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
 		nsConfig.namespace+suffixTLS,
 		nsConfig.TLS.Enabled,
 		"Enable TLS with client certificates.")
+	flagSet.Bool(
+		nsConfig.namespace+suffixSkipHostVerify,
+		nsConfig.TLS.SkipHostVerify,
+		"(insecure) Skip server's certificate chain and host name verification")
 	flagSet.String(
 		nsConfig.namespace+suffixCert,
 		nsConfig.TLS.CertPath,
@@ -208,6 +219,14 @@ func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
 		"(experimental) Use read and write aliases for indices. Use this option with Elasticsearch rollover "+
 			"API. It requires an external component to create aliases before startup and then performing its management. "+
 			"Note that "+nsConfig.namespace+suffixMaxSpanAge+" is not taken into the account and has to be substituted by external component managing read alias.")
+	flagSet.Bool(
+		nsConfig.namespace+suffixCreateIndexTemplate,
+		nsConfig.CreateIndexTemplates,
+		"Create index templates at application startup. Set to false when templates are installed manually.")
+	flagSet.Uint(
+		nsConfig.namespace+suffixVersion,
+		0,
+		"The major Elasticsearch version. If not specified, the value will be auto-detected from Elasticsearch.")
 	if nsConfig.namespace == archiveNamespace {
 		flagSet.Bool(
 			nsConfig.namespace+suffixEnabled,
@@ -240,6 +259,7 @@ func initFromViper(cfg *namespaceConfig, v *viper.Viper) {
 	cfg.BulkFlushInterval = v.GetDuration(cfg.namespace + suffixBulkFlushInterval)
 	cfg.Timeout = v.GetDuration(cfg.namespace + suffixTimeout)
 	cfg.TLS.Enabled = v.GetBool(cfg.namespace + suffixTLS)
+	cfg.TLS.SkipHostVerify = v.GetBool(cfg.namespace + suffixSkipHostVerify)
 	cfg.TLS.CertPath = v.GetString(cfg.namespace + suffixCert)
 	cfg.TLS.KeyPath = v.GetString(cfg.namespace + suffixKey)
 	cfg.TLS.CaPath = v.GetString(cfg.namespace + suffixCA)
@@ -249,6 +269,10 @@ func initFromViper(cfg *namespaceConfig, v *viper.Viper) {
 	cfg.TagDotReplacement = v.GetString(cfg.namespace + suffixTagDeDotChar)
 	cfg.UseReadWriteAliases = v.GetBool(cfg.namespace + suffixReadAlias)
 	cfg.Enabled = v.GetBool(cfg.namespace + suffixEnabled)
+	cfg.CreateIndexTemplates = v.GetBool(cfg.namespace + suffixCreateIndexTemplate)
+	cfg.Version = uint(v.GetInt(cfg.namespace + suffixVersion))
+	// TODO: Need to figure out a better way for do this.
+	cfg.AllowTokenFromContext = v.GetBool(spanstore.StoragePropagationKey)
 }
 
 // GetPrimary returns primary configuration.

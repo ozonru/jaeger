@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -156,13 +157,21 @@ func (aH *APIHandler) getOperationsLegacy(w http.ResponseWriter, r *http.Request
 	vars := mux.Vars(r)
 	// given how getOperationsLegacy is bound to URL route, serviceParam cannot be empty
 	service, _ := url.QueryUnescape(vars[serviceParam])
-	operations, err := aH.queryService.GetOperations(r.Context(), service)
+	// for backwards compatibility, we will retrieve operations with all span kind
+	operations, err := aH.queryService.GetOperations(r.Context(),
+		spanstore.OperationQueryParameters{
+			ServiceName: service,
+			// include all kinds
+			SpanKind: "",
+		})
+
 	if aH.handleError(w, err, http.StatusInternalServerError) {
 		return
 	}
+	operationNames := getUniqueOperationNames(operations)
 	structuredRes := structuredResponse{
-		Data:  operations,
-		Total: len(operations),
+		Data:  operationNames,
+		Total: len(operationNames),
 	}
 	aH.writeJSON(w, r, &structuredRes)
 }
@@ -174,12 +183,24 @@ func (aH *APIHandler) getOperations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	operations, err := aH.queryService.GetOperations(r.Context(), service)
+	spanKind := r.FormValue(spanKindParam)
+	operations, err := aH.queryService.GetOperations(
+		r.Context(),
+		spanstore.OperationQueryParameters{ServiceName: service, SpanKind: spanKind},
+	)
+
 	if aH.handleError(w, err, http.StatusInternalServerError) {
 		return
 	}
+	data := make([]ui.Operation, len(operations))
+	for i, operation := range operations {
+		data[i] = ui.Operation{
+			Name:     operation.Name,
+			SpanKind: operation.SpanKind,
+		}
+	}
 	structuredRes := structuredResponse{
-		Data:  operations,
+		Data:  data,
 		Total: len(operations),
 	}
 	aH.writeJSON(w, r, &structuredRes)
@@ -242,13 +263,13 @@ func (aH *APIHandler) tracesByIDs(ctx context.Context, traceIDs []model.TraceID)
 
 func (aH *APIHandler) dependencies(w http.ResponseWriter, r *http.Request) {
 	endTsMillis, err := strconv.ParseInt(r.FormValue(endTsParam), 10, 64)
-	if aH.handleError(w, errors.Wrapf(err, "Unable to parse %s", endTimeParam), http.StatusBadRequest) {
+	if aH.handleError(w, errors.Wrapf(err, "unable to parse %s", endTimeParam), http.StatusBadRequest) {
 		return
 	}
 	var lookback time.Duration
 	if formValue := r.FormValue(lookbackParam); len(formValue) > 0 {
 		lookback, err = time.ParseDuration(formValue + "ms")
-		if aH.handleError(w, errors.Wrapf(err, "Unable to parse %s", lookbackParam), http.StatusBadRequest) {
+		if aH.handleError(w, errors.Wrapf(err, "unable to parse %s", lookbackParam), http.StatusBadRequest) {
 			return
 		}
 	}
@@ -395,7 +416,7 @@ func (aH *APIHandler) archiveTrace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	structuredRes := structuredResponse{
-		Data:   []string{}, // doens't matter, just want an empty array
+		Data:   []string{}, // doesn't matter, just want an empty array
 		Errors: []structuredError{},
 	}
 	aH.writeJSON(w, r, &structuredRes)

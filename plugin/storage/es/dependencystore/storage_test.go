@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,11 +21,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/olivere/elastic"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
-	"gopkg.in/olivere/elastic.v5"
 
 	"github.com/jaegertracing/jaeger/model"
 	"github.com/jaegertracing/jaeger/pkg/es/mocks"
@@ -66,7 +67,7 @@ func TestNewSpanReaderIndexPrefix(t *testing.T) {
 	for _, testCase := range testCases {
 		client := &mocks.Client{}
 		r := NewDependencyStore(client, zap.NewNop(), testCase.prefix)
-		assert.Equal(t, testCase.expected+dependencyIndex, r.dependencyIndexPrefix)
+		assert.Equal(t, testCase.expected+dependencyIndex, r.indexPrefix)
 	}
 }
 
@@ -75,12 +76,18 @@ func TestWriteDependencies(t *testing.T) {
 		createIndexError error
 		writeError       error
 		expectedError    string
+		esVersion        uint
 	}{
 		{
 			createIndexError: errors.New("index not created"),
 			expectedError:    "Failed to create index: index not created",
+			esVersion:        6,
 		},
-		{},
+		{
+			createIndexError: errors.New("index not created"),
+			expectedError:    "Failed to create index: index not created",
+			esVersion:        7,
+		},
 	}
 	for _, testCase := range testCases {
 		withDepStorage("", func(r *depStorageTest) {
@@ -90,9 +97,14 @@ func TestWriteDependencies(t *testing.T) {
 			indexService := &mocks.IndicesCreateService{}
 			writeService := &mocks.IndexService{}
 			r.client.On("Index").Return(writeService)
+			r.client.On("GetVersion").Return(testCase.esVersion)
 			r.client.On("CreateIndex", stringMatcher(indexName)).Return(indexService)
 
-			indexService.On("Body", stringMatcher(dependenciesMapping)).Return(indexService)
+			if testCase.esVersion == 7 {
+				indexService.On("Body", stringMatcher(dependenciesMapping7)).Return(indexService)
+			} else {
+				indexService.On("Body", stringMatcher(dependenciesMapping)).Return(indexService)
+			}
 			indexService.On("Do", mock.Anything).Return(nil, testCase.createIndexError)
 
 			writeService.On("Index", stringMatcher(indexName)).Return(writeService)
@@ -129,8 +141,8 @@ func TestGetDependencies(t *testing.T) {
 		searchError    error
 		expectedError  string
 		expectedOutput []model.DependencyLink
-		indexPrefix string
-		indices []interface{}
+		indexPrefix    string
+		indices        []interface{}
 	}{
 		{
 			searchResult: createSearchResult(goodDependencies),
@@ -146,19 +158,18 @@ func TestGetDependencies(t *testing.T) {
 		{
 			searchResult:  createSearchResult(badDependencies),
 			expectedError: "Unmarshalling ElasticSearch documents failed",
-			indices: []interface{}{"jaeger-dependencies-1995-04-21", "jaeger-dependencies-1995-04-20"},
+			indices:       []interface{}{"jaeger-dependencies-1995-04-21", "jaeger-dependencies-1995-04-20"},
 		},
 		{
 			searchError:   errors.New("search failure"),
 			expectedError: "Failed to search for dependencies: search failure",
-			indices: []interface{}{"jaeger-dependencies-1995-04-21", "jaeger-dependencies-1995-04-20"},
+			indices:       []interface{}{"jaeger-dependencies-1995-04-21", "jaeger-dependencies-1995-04-20"},
 		},
 		{
 			searchError:   errors.New("search failure"),
 			expectedError: "Failed to search for dependencies: search failure",
-			indexPrefix: "foo",
-			indices: []interface{}{"foo-jaeger-dependencies-1995-04-21", "foo-jaeger-dependencies-1995-04-20",
-				"foo:jaeger-dependencies-1995-04-21", "foo:jaeger-dependencies-1995-04-20"},
+			indexPrefix:   "foo",
+			indices:       []interface{}{"foo-jaeger-dependencies-1995-04-21", "foo-jaeger-dependencies-1995-04-20"},
 		},
 	}
 	for _, testCase := range testCases {
@@ -168,7 +179,6 @@ func TestGetDependencies(t *testing.T) {
 			searchService := &mocks.SearchService{}
 			r.client.On("Search", testCase.indices...).Return(searchService)
 
-			searchService.On("Type", stringMatcher(dependencyType)).Return(searchService)
 			searchService.On("Size", mock.Anything).Return(searchService)
 			searchService.On("Query", mock.Anything).Return(searchService)
 			searchService.On("IgnoreUnavailable", mock.AnythingOfType("bool")).Return(searchService)

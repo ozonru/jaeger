@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,6 +39,7 @@ var testingSpan = &model.Span{
 	OperationName: "operationName",
 	Tags: model.KeyValues{
 		model.String("tagKey", "tagValue"),
+		model.String("span.kind", "client"),
 	},
 	Logs: []model.Log{
 		{
@@ -62,6 +64,7 @@ var childSpan1 = &model.Span{
 	OperationName: "childOperationName",
 	Tags: model.KeyValues{
 		model.String("tagKey", "tagValue"),
+		model.String("span.kind", "server"),
 	},
 	Logs: []model.Log{
 		{
@@ -86,6 +89,7 @@ var childSpan2 = &model.Span{
 	OperationName: "childOperationName",
 	Tags: model.KeyValues{
 		model.String("tagKey", "tagValue"),
+		model.String("span.kind", "local"),
 	},
 	Logs: []model.Log{
 		{
@@ -209,7 +213,7 @@ func TestStoreGetTraceSuccess(t *testing.T) {
 func TestStoreGetTraceFailure(t *testing.T) {
 	withPopulatedMemoryStore(func(store *Store) {
 		trace, err := store.GetTrace(context.Background(), model.TraceID{})
-		assert.EqualError(t, err, errTraceNotFound.Error())
+		assert.EqualError(t, err, spanstore.ErrTraceNotFound.Error())
 		assert.Nil(t, trace)
 	})
 }
@@ -223,18 +227,48 @@ func TestStoreGetServices(t *testing.T) {
 	})
 }
 
-func TestStoreGetOperationsFound(t *testing.T) {
+func TestStoreGetAllOperationsFound(t *testing.T) {
 	withPopulatedMemoryStore(func(store *Store) {
-		operations, err := store.GetOperations(context.Background(), testingSpan.Process.ServiceName)
+		assert.NoError(t, store.WriteSpan(testingSpan))
+		assert.NoError(t, store.WriteSpan(childSpan1))
+		assert.NoError(t, store.WriteSpan(childSpan2))
+		assert.NoError(t, store.WriteSpan(childSpan2_1))
+		operations, err := store.GetOperations(
+			context.Background(),
+			spanstore.OperationQueryParameters{ServiceName: childSpan1.Process.ServiceName},
+		)
+		assert.NoError(t, err)
+		assert.Len(t, operations, 3)
+		assert.EqualValues(t, childSpan1.OperationName, operations[0].Name)
+	})
+}
+
+func TestStoreGetServerOperationsFound(t *testing.T) {
+	withPopulatedMemoryStore(func(store *Store) {
+		assert.NoError(t, store.WriteSpan(testingSpan))
+		assert.NoError(t, store.WriteSpan(childSpan1))
+		assert.NoError(t, store.WriteSpan(childSpan2))
+		assert.NoError(t, store.WriteSpan(childSpan2_1))
+		expected := []spanstore.Operation{
+			{Name: childSpan1.OperationName, SpanKind: "server"},
+		}
+		operations, err := store.GetOperations(context.Background(),
+			spanstore.OperationQueryParameters{
+				ServiceName: childSpan1.Process.ServiceName,
+				SpanKind:    "server",
+			})
 		assert.NoError(t, err)
 		assert.Len(t, operations, 1)
-		assert.EqualValues(t, testingSpan.OperationName, operations[0])
+		assert.Equal(t, expected, operations)
 	})
 }
 
 func TestStoreGetOperationsNotFound(t *testing.T) {
 	withPopulatedMemoryStore(func(store *Store) {
-		operations, err := store.GetOperations(context.Background(), "notAService")
+		operations, err := store.GetOperations(
+			context.Background(),
+			spanstore.OperationQueryParameters{ServiceName: "notAService"},
+		)
 		assert.NoError(t, err)
 		assert.Len(t, operations, 0)
 	})
@@ -246,6 +280,55 @@ func TestStoreGetEmptyTraceSet(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, traces, 0)
 	})
+}
+
+func TestStoreFindTracesLimitGetsMostRecent(t *testing.T) {
+	storeSize, querySize := 100, 10
+
+	// This slice is in order from oldest to newest trace.
+	// Store keeps spans in a map, so storage order is effectively random.
+	// This ensures that query results include the most recent traces when limit < results.
+
+	var spans []*model.Span
+	for i := 0; i < storeSize; i++ {
+		spans = append(spans,
+			&model.Span{
+				TraceID:       model.NewTraceID(1, uint64(i)),
+				SpanID:        model.NewSpanID(1),
+				OperationName: "operationName",
+				Duration:      time.Second,
+				StartTime:     time.Unix(int64(i*24*60*60), 0),
+				Process: &model.Process{
+					ServiceName: "serviceName",
+				},
+			})
+	}
+
+	// Want the two most recent spans, not any two spans
+	var expectedTraces []*model.Trace
+	for _, span := range spans[storeSize-querySize:] {
+		trace := &model.Trace{
+			Spans: []*model.Span{span},
+		}
+		expectedTraces = append(expectedTraces, trace)
+	}
+
+	memStore := NewStore()
+	for _, span := range spans {
+		memStore.WriteSpan(span)
+	}
+
+	gotTraces, err := memStore.FindTraces(context.Background(), &spanstore.TraceQueryParameters{
+		ServiceName: "serviceName",
+		NumTraces:   querySize,
+	})
+
+	assert.NoError(t, err)
+	if assert.Len(t, gotTraces, len(expectedTraces)) {
+		for i := range gotTraces {
+			assert.EqualValues(t, expectedTraces[i].Spans[0].StartTime.Unix(), gotTraces[i].Spans[0].StartTime.Unix())
+		}
+	}
 }
 
 func TestStoreGetTrace(t *testing.T) {

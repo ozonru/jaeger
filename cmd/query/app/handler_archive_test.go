@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -87,7 +88,7 @@ func TestArchiveTrace_TraceNotFound(t *testing.T) {
 		ts.spanReader.On("GetTrace", mock.AnythingOfType("*context.valueCtx"), mock.AnythingOfType("model.TraceID")).
 			Return(nil, spanstore.ErrTraceNotFound).Once()
 		var response structuredResponse
-		err := postJSON(ts.server.URL+"/api/archive/" + mockTraceID.String(), []string{}, &response)
+		err := postJSON(ts.server.URL+"/api/archive/"+mockTraceID.String(), []string{}, &response)
 		assert.EqualError(t, err, `404 error from server: {"data":null,"total":0,"limit":0,"offset":0,"errors":[{"code":404,"msg":"trace not found"}]}`+"\n")
 	}, querysvc.QueryServiceOptions{ArchiveSpanReader: mockReader, ArchiveSpanWriter: mockWriter})
 }

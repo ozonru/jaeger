@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +19,7 @@ import (
 	"context"
 )
 
-// Driver describes a driver and the currentl car location.
+// Driver describes a driver and the current car location.
 type Driver struct {
 	DriverID string
 	Location string

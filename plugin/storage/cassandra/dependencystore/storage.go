@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -124,7 +125,7 @@ func (s *DependencyStore) GetDependencies(endTs time.Time, lookback time.Duratio
 				Parent:    dependency.Parent,
 				Child:     dependency.Child,
 				CallCount: uint64(dependency.CallCount),
-				Source:    model.DependencyLinkSource(dependency.Source),
+				Source:    dependency.Source,
 			}.ApplyDefaults()
 			mDependency = append(mDependency, dl)
 		}

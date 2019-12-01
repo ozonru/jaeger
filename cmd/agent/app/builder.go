@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,9 +18,9 @@ package app
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/apache/thrift/lib/go/thrift"
-	"github.com/pkg/errors"
 	"github.com/uber/jaeger-lib/metrics"
 	"go.uber.org/zap"
 
@@ -31,6 +32,7 @@ import (
 	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter/tchannel"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/servers"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/servers/thriftudp"
+	"github.com/jaegertracing/jaeger/ports"
 	zipkinThrift "github.com/jaegertracing/jaeger/thrift-gen/agent"
 	jaegerThrift "github.com/jaegertracing/jaeger/thrift-gen/jaeger"
 )
@@ -40,14 +42,14 @@ const (
 	defaultMaxPacketSize = 65000
 	defaultServerWorkers = 10
 
-	defaultHTTPServerHostPort = ":5778"
-
 	jaegerModel Model = "jaeger"
-	zipkinModel       = "zipkin"
+	zipkinModel Model = "zipkin"
 
 	compactProtocol Protocol = "compact"
-	binaryProtocol           = "binary"
+	binaryProtocol  Protocol = "binary"
 )
+
+var defaultHTTPServerHostPort = ":" + strconv.Itoa(ports.AgentConfigServerHTTP)
 
 // Model used to distinguish the data transfer model
 type Model string
@@ -56,8 +58,6 @@ type Model string
 type Protocol string
 
 var (
-	errNoReporters = errors.New("agent requires at least one Reporter")
-
 	protocolFactoryMap = map[Protocol]thrift.TProtocolFactory{
 		compactProtocol: thrift.NewTCompactProtocolFactory(),
 		binaryProtocol:  thrift.NewTBinaryProtocolFactoryDefault(),
@@ -215,25 +215,25 @@ func defaultInt(value int, defaultVal int) int {
 // CreateCollectorProxy creates collector proxy
 func CreateCollectorProxy(
 	opts *reporter.Options,
-	tchanRep *tchannel.Builder,
-	grpcRepOpts *grpc.Options,
+	tchanBuilder *tchannel.Builder,
+	grpcBuilder *grpc.ConnBuilder,
 	logger *zap.Logger,
 	mFactory metrics.Factory,
 ) (CollectorProxy, error) {
 	// GRPC type is set as default in viper, but we check for legacy flags
 	// to keep backward compatibility
 	if opts.ReporterType == reporter.GRPC &&
-		len(tchanRep.CollectorHostPorts) > 0 &&
-		len(grpcRepOpts.CollectorHostPort) == 0 {
+		len(tchanBuilder.CollectorHostPorts) > 0 &&
+		len(grpcBuilder.CollectorHostPorts) == 0 {
 		logger.Warn("Using deprecated configuration", zap.String("option", "--collector-host.port"))
-		return tchannel.NewCollectorProxy(tchanRep, mFactory, logger)
+		return tchannel.NewCollectorProxy(tchanBuilder, mFactory, logger)
 	}
 	switch opts.ReporterType {
 	case reporter.GRPC:
-		return grpc.NewCollectorProxy(grpcRepOpts, opts.AgentTags, mFactory, logger)
+		return grpc.NewCollectorProxy(grpcBuilder, opts.AgentTags, mFactory, logger)
 	case reporter.TCHANNEL:
-		return tchannel.NewCollectorProxy(tchanRep, mFactory, logger)
+		return tchannel.NewCollectorProxy(tchanBuilder, mFactory, logger)
 	default:
-		return nil, errors.New(fmt.Sprintf("unknown reporter type %s", string(opts.ReporterType)))
+		return nil, fmt.Errorf("unknown reporter type %s", string(opts.ReporterType))
 	}
 }

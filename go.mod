@@ -1,7 +1,6 @@
 module github.com/jaegertracing/jaeger
 
 require (
-	github.com/BurntSushi/toml v0.3.1 // indirect
 	github.com/DataDog/zstd v1.3.5 // indirect
 	github.com/Shopify/sarama v1.20.1
 	github.com/Shopify/toxiproxy v2.1.4+incompatible // indirect
@@ -13,9 +12,11 @@ require (
 	github.com/bsm/sarama-cluster v2.1.13+incompatible
 	github.com/codahale/hdrhistogram v0.0.0-20161010025455-3a0bb77429bd // indirect
 	github.com/crossdock/crossdock-go v0.0.0-20160816171116-049aabb0122b
+	github.com/dgraph-io/badger v1.6.0
 	github.com/eapache/go-resiliency v1.1.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/fsnotify/fsnotify v1.4.7
 	github.com/go-openapi/analysis v0.18.0 // indirect
 	github.com/go-openapi/errors v0.18.0
 	github.com/go-openapi/jsonpointer v0.18.0 // indirect
@@ -29,14 +30,17 @@ require (
 	github.com/gocql/gocql v0.0.0-20190325140904-fc3925ac2cbd
 	github.com/gogo/googleapis v0.0.0-20180501115203-b23578765ee5
 	github.com/gogo/protobuf v1.1.1
-	github.com/golang/protobuf v1.2.0
+	github.com/golang/protobuf v1.3.1
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db // indirect
+	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/gorilla/handlers v1.4.0
 	github.com/gorilla/mux v1.7.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.0.0
 	github.com/grpc-ecosystem/grpc-gateway v1.7.0
-	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/hashicorp/go-hclog v0.10.0
+	github.com/hashicorp/go-plugin v1.0.1
 	github.com/kr/pretty v0.1.0
+	github.com/olivere/elastic v6.2.26+incompatible
 	github.com/onsi/ginkgo v1.8.0 // indirect
 	github.com/onsi/gomega v1.5.0 // indirect
 	github.com/opentracing-contrib/go-stdlib v0.0.0-20190205184154-464eb271c715
@@ -49,10 +53,12 @@ require (
 	github.com/prometheus/common v0.2.0 // indirect
 	github.com/prometheus/procfs v0.0.0-20190209105433-f8d8b3f739bd // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a // indirect
+	github.com/rs/cors v1.7.0
+	github.com/soheilhy/cmux v0.1.4
 	github.com/spf13/afero v1.2.1 // indirect
-	github.com/spf13/cobra v0.0.3
+	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.3
-	github.com/spf13/viper v1.3.1
+	github.com/spf13/viper v1.3.2
 	github.com/streadway/quantile v0.0.0-20150917103942-b0c588724d25 // indirect
 	github.com/stretchr/testify v1.3.0
 	github.com/uber-go/atomic v1.3.2 // indirect
@@ -60,11 +66,14 @@ require (
 	github.com/uber/jaeger-lib v2.0.0+incompatible
 	github.com/uber/tchannel-go v1.12.0
 	go.uber.org/atomic v1.3.2
+	go.uber.org/automaxprocs v1.2.0
 	go.uber.org/multierr v1.1.0 // indirect
 	go.uber.org/zap v1.9.1
-	golang.org/x/net v0.0.0-20190206173232-65e2d4e15006
-	golang.org/x/sys v0.0.0-20190209173611-3b5209105503 // indirect
+	golang.org/x/net v0.0.0-20190620200207-3b0461eec859
+	golang.org/x/sys v0.0.0-20191008105621-543471e840be
 	google.golang.org/grpc v1.18.0
 	gopkg.in/olivere/elastic.v5 v5.0.79
 	gopkg.in/yaml.v2 v2.2.2
 )
+
+go 1.13

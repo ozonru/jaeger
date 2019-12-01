@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,12 +31,14 @@ const (
 	suffixConnPerHost          = ".connections-per-host"
 	suffixMaxRetryAttempts     = ".max-retry-attempts"
 	suffixTimeout              = ".timeout"
+	suffixConnectTimeout       = ".connect-timeout"
 	suffixReconnectInterval    = ".reconnect-interval"
 	suffixServers              = ".servers"
 	suffixPort                 = ".port"
 	suffixKeyspace             = ".keyspace"
 	suffixDC                   = ".local-dc"
 	suffixConsistency          = ".consistency"
+	suffixDisableCompression   = ".disable-compression"
 	suffixProtoVer             = ".proto-version"
 	suffixSocketKeepAlive      = ".socket-keep-alive"
 	suffixUsername             = ".username"
@@ -50,15 +53,25 @@ const (
 
 	// common storage settings
 	suffixSpanStoreWriteCacheTTL = ".span-store-write-cache-ttl"
+	suffixIndexTagsBlacklist     = ".index.tag-blacklist"
+	suffixIndexTagsWhitelist     = ".index.tag-whitelist"
+	suffixIndexLogs              = ".index.logs"
+	suffixIndexTags              = ".index.tags"
+	suffixIndexProcessTags       = ".index.process-tags"
 )
 
 // Options contains various type of Cassandra configs and provides the ability
 // to bind them to command line flag and apply overlays, so that some configurations
 // (e.g. archive) may be underspecified and infer the rest of its parameters from primary.
 type Options struct {
-	primary                *namespaceConfig
-	others                 map[string]*namespaceConfig
-	SpanStoreWriteCacheTTL time.Duration
+	primary                 *namespaceConfig
+	others                  map[string]*namespaceConfig
+	SpanStoreWriteCacheTTL  time.Duration
+	tagIndexBlacklist       string
+	tagIndexWhitelist       string
+	DisableLogsIndex        bool
+	DisableTagsIndex        bool
+	DisableProcessTagsIndex bool
 }
 
 // the Servers field in config.Configuration is a list, which we cannot represent with flags.
@@ -113,6 +126,26 @@ func (opt *Options) AddFlags(flagSet *flag.FlagSet) {
 	flagSet.Duration(opt.primary.namespace+suffixSpanStoreWriteCacheTTL,
 		opt.SpanStoreWriteCacheTTL,
 		"The duration to wait before rewriting an existing service or operation name")
+	flagSet.String(
+		opt.primary.namespace+suffixIndexTagsBlacklist,
+		opt.tagIndexBlacklist,
+		"The comma-separated list of span tags to blacklist from being indexed. All other tags will be indexed. Mutually exclusive with the whitelist option.")
+	flagSet.String(
+		opt.primary.namespace+suffixIndexTagsWhitelist,
+		opt.tagIndexWhitelist,
+		"The comma-separated list of span tags to whitelist for being indexed. All other tags will not be indexed. Mutually exclusive with the blacklist option.")
+	flagSet.Bool(
+		opt.primary.namespace+suffixIndexLogs,
+		!opt.DisableLogsIndex,
+		"Controls log field indexing. Set to false to disable.")
+	flagSet.Bool(
+		opt.primary.namespace+suffixIndexTags,
+		!opt.DisableTagsIndex,
+		"Controls tag indexing. Set to false to disable.")
+	flagSet.Bool(
+		opt.primary.namespace+suffixIndexProcessTags,
+		!opt.DisableProcessTagsIndex,
+		"Controls process tag indexing. Set to false to disable.")
 }
 
 func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
@@ -134,6 +167,10 @@ func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
 		nsConfig.namespace+suffixTimeout,
 		nsConfig.Timeout,
 		"Timeout used for queries. A Timeout of zero means no timeout")
+	flagSet.Duration(
+		nsConfig.namespace+suffixConnectTimeout,
+		nsConfig.ConnectTimeout,
+		"Timeout used for connections to Cassandra Servers")
 	flagSet.Duration(
 		nsConfig.namespace+suffixReconnectInterval,
 		nsConfig.ReconnectInterval,
@@ -158,6 +195,10 @@ func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
 		nsConfig.namespace+suffixConsistency,
 		nsConfig.Consistency,
 		"The Cassandra consistency level, e.g. ANY, ONE, TWO, THREE, QUORUM, ALL, LOCAL_QUORUM, EACH_QUORUM, LOCAL_ONE (default LOCAL_ONE)")
+	flagSet.Bool(
+		nsConfig.namespace+suffixDisableCompression,
+		false,
+		"Disables the use of the default Snappy Compression while connecting to the Cassandra Cluster if set to true. This is useful for connecting to Cassandra Clusters(like Azure Cosmos Db with Cassandra API) that do not support SnappyCompression")
 	flagSet.Int(
 		nsConfig.namespace+suffixProtoVer,
 		nsConfig.ProtoVersion,
@@ -201,7 +242,7 @@ func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
 	flagSet.Bool(
 		nsConfig.namespace+suffixEnableDependenciesV2,
 		nsConfig.EnableDependenciesV2,
-		"DEPRECATED: Jaeger will automatically detect the version of the dependencies table")
+		"(deprecated) Jaeger will automatically detect the version of the dependencies table")
 }
 
 // InitFromViper initializes Options with properties from viper
@@ -211,6 +252,11 @@ func (opt *Options) InitFromViper(v *viper.Viper) {
 		cfg.initFromViper(v)
 	}
 	opt.SpanStoreWriteCacheTTL = v.GetDuration(opt.primary.namespace + suffixSpanStoreWriteCacheTTL)
+	opt.tagIndexBlacklist = stripWhiteSpace(v.GetString(opt.primary.namespace + suffixIndexTagsBlacklist))
+	opt.tagIndexWhitelist = stripWhiteSpace(v.GetString(opt.primary.namespace + suffixIndexTagsWhitelist))
+	opt.DisableTagsIndex = !v.GetBool(opt.primary.namespace + suffixIndexTags)
+	opt.DisableLogsIndex = !v.GetBool(opt.primary.namespace + suffixIndexLogs)
+	opt.DisableProcessTagsIndex = !v.GetBool(opt.primary.namespace + suffixIndexProcessTags)
 }
 
 func (cfg *namespaceConfig) initFromViper(v *viper.Viper) {
@@ -220,6 +266,7 @@ func (cfg *namespaceConfig) initFromViper(v *viper.Viper) {
 	cfg.ConnectionsPerHost = v.GetInt(cfg.namespace + suffixConnPerHost)
 	cfg.MaxRetryAttempts = v.GetInt(cfg.namespace + suffixMaxRetryAttempts)
 	cfg.Timeout = v.GetDuration(cfg.namespace + suffixTimeout)
+	cfg.ConnectTimeout = v.GetDuration(cfg.namespace + suffixConnectTimeout)
 	cfg.ReconnectInterval = v.GetDuration(cfg.namespace + suffixReconnectInterval)
 	cfg.servers = stripWhiteSpace(v.GetString(cfg.namespace + suffixServers))
 	cfg.Port = v.GetInt(cfg.namespace + suffixPort)
@@ -237,6 +284,7 @@ func (cfg *namespaceConfig) initFromViper(v *viper.Viper) {
 	cfg.TLS.ServerName = v.GetString(cfg.namespace + suffixServerName)
 	cfg.TLS.EnableHostVerification = v.GetBool(cfg.namespace + suffixVerifyHost)
 	cfg.EnableDependenciesV2 = v.GetBool(cfg.namespace + suffixEnableDependenciesV2)
+	cfg.DisableCompression = v.GetBool(cfg.namespace + suffixDisableCompression)
 }
 
 // GetPrimary returns primary configuration.
@@ -261,6 +309,24 @@ func (opt *Options) Get(namespace string) *config.Configuration {
 	}
 	nsCfg.Servers = strings.Split(nsCfg.servers, ",")
 	return &nsCfg.Configuration
+}
+
+// TagIndexBlacklist returns the list of blacklisted tags
+func (opt *Options) TagIndexBlacklist() []string {
+	if len(opt.tagIndexBlacklist) > 0 {
+		return strings.Split(opt.tagIndexBlacklist, ",")
+	}
+
+	return nil
+}
+
+// TagIndexWhitelist returns the list of whitelisted tags
+func (opt *Options) TagIndexWhitelist() []string {
+	if len(opt.tagIndexWhitelist) > 0 {
+		return strings.Split(opt.tagIndexWhitelist, ",")
+	}
+
+	return nil
 }
 
 // stripWhiteSpace removes all whitespace characters from a string

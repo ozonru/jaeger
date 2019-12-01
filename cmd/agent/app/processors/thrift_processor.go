@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -59,7 +60,7 @@ func NewThriftProcessor(
 ) (*ThriftProcessor, error) {
 	if numProcessors <= 0 {
 		return nil, fmt.Errorf(
-			"Number of processors must be greater than 0, called with %d", numProcessors)
+			"number of processors must be greater than 0, called with %d", numProcessors)
 	}
 	var protocolPool = &sync.Pool{
 		New: func() interface{} {
@@ -76,16 +77,18 @@ func NewThriftProcessor(
 		numProcessors: numProcessors,
 	}
 	metrics.Init(&res.metrics, mFactory, nil)
+	res.processing.Add(res.numProcessors)
+	for i := 0; i < res.numProcessors; i++ {
+		go func() {
+			res.processBuffer()
+			res.processing.Done()
+		}()
+	}
 	return res, nil
 }
 
-// Serve initiates the readers and starts serving traffic
+// Serve starts serving traffic
 func (s *ThriftProcessor) Serve() {
-	s.processing.Add(s.numProcessors)
-	for i := 0; i < s.numProcessors; i++ {
-		go s.processBuffer()
-	}
-
 	s.server.Serve()
 }
 
@@ -119,5 +122,4 @@ func (s *ThriftProcessor) processBuffer() {
 		s.protocolPool.Put(protocol)
 		s.server.DataRecd(readBuf) // acknowledge receipt and release the buffer
 	}
-	s.processing.Done()
 }

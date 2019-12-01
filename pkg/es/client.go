@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,17 +19,19 @@ import (
 	"context"
 	"io"
 
-	"gopkg.in/olivere/elastic.v5"
+	"github.com/olivere/elastic"
 )
 
 // Client is an abstraction for elastic.Client
 type Client interface {
 	IndexExists(index string) IndicesExistsService
 	CreateIndex(index string) IndicesCreateService
+	CreateTemplate(id string) TemplateCreateService
 	Index() IndexService
 	Search(indices ...string) SearchService
 	MultiSearch() MultiSearchService
 	io.Closer
+	GetVersion() uint
 }
 
 // IndicesExistsService is an abstraction for elastic.IndicesExistsService
@@ -42,6 +45,12 @@ type IndicesCreateService interface {
 	Do(ctx context.Context) (*elastic.IndicesCreateResult, error)
 }
 
+// TemplateCreateService is an abstraction for creating a mapping
+type TemplateCreateService interface {
+	Body(mapping string) TemplateCreateService
+	Do(ctx context.Context) (*elastic.IndicesPutTemplateResponse, error)
+}
+
 // IndexService is an abstraction for elastic BulkService
 type IndexService interface {
 	Index(index string) IndexService
@@ -53,7 +62,6 @@ type IndexService interface {
 
 // SearchService is an abstraction for elastic.SearchService
 type SearchService interface {
-	Type(typ string) SearchService
 	Size(size int) SearchService
 	Aggregation(name string, aggregation elastic.Aggregation) SearchService
 	IgnoreUnavailable(ignoreUnavailable bool) SearchService

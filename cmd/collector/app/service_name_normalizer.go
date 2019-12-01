@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +42,7 @@ func newServiceNameReplacer() *strings.Replacer {
 		mapping[i] = byte(i)
 
 	}
-	// upper case latters are safe, but convert them to lower case
+	// upper case letters are safe, but convert them to lower case
 	for i := 'A'; i <= 'Z'; i++ {
 		mapping[i] = byte(i - 'A' + 'a')
 	}

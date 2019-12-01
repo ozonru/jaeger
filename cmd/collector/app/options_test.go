@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -25,7 +26,7 @@ import (
 )
 
 func TestAllOptionSet(t *testing.T) {
-	types := []string{"sneh"}
+	types := []SpanFormat{SpanFormat("sneh")}
 	opts := Options.apply(
 		Options.ReportBusy(true),
 		Options.BlockingSubmit(true),

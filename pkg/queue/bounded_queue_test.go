@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -50,6 +51,7 @@ func TestBoundedQueue(t *testing.T) {
 
 		// block further processing until startLock is released
 		startLock.Lock()
+		//lint:ignore SA2001 empty section is ok
 		startLock.Unlock()
 	})
 

@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -90,7 +91,7 @@ var (
 
 type serviceNamesReader func() ([]string, error)
 
-type operationNamesReader func(service string) ([]string, error)
+type operationNamesReader func(query spanstore.OperationQueryParameters) ([]spanstore.Operation, error)
 
 type spanReaderMetrics struct {
 	readTraces                 *casMetrics.Table
@@ -142,8 +143,11 @@ func (s *SpanReader) GetServices(ctx context.Context) ([]string, error) {
 }
 
 // GetOperations returns all operations for a specific service traced by Jaeger
-func (s *SpanReader) GetOperations(ctx context.Context, service string) ([]string, error) {
-	return s.operationNamesReader(service)
+func (s *SpanReader) GetOperations(
+	ctx context.Context,
+	query spanstore.OperationQueryParameters,
+) ([]spanstore.Operation, error) {
+	return s.operationNamesReader(query)
 }
 
 func (s *SpanReader) readTrace(ctx context.Context, traceID dbmodel.TraceID) (*model.Trace, error) {
@@ -372,6 +376,7 @@ func (s *SpanReader) queryByDuration(ctx context.Context, traceQuery *spanstore.
 }
 
 func (s *SpanReader) queryByServiceNameAndOperation(ctx context.Context, tq *spanstore.TraceQueryParameters) (dbmodel.UniqueTraceIDs, error) {
+	//lint:ignore SA4006 failing to re-assign context is worse than unused variable
 	span, ctx := startSpanForQuery(ctx, "queryByServiceNameAndOperation", queryByServiceAndOperationName)
 	defer span.Finish()
 	query := s.session.Query(
@@ -386,6 +391,7 @@ func (s *SpanReader) queryByServiceNameAndOperation(ctx context.Context, tq *spa
 }
 
 func (s *SpanReader) queryByService(ctx context.Context, tq *spanstore.TraceQueryParameters) (dbmodel.UniqueTraceIDs, error) {
+	//lint:ignore SA4006 failing to re-assign context is worse than unused variable
 	span, ctx := startSpanForQuery(ctx, "queryByService", queryByServiceName)
 	defer span.Finish()
 	query := s.session.Query(

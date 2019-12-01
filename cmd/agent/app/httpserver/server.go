@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +31,7 @@ import (
 const mimeTypeApplicationJSON = "application/json"
 
 var (
-	errBadRequest = errors.New("Bad request")
+	errBadRequest = errors.New("bad request")
 )
 
 // NewHTTPServer creates a new server that hosts an HTTP/JSON endpoint for clients
