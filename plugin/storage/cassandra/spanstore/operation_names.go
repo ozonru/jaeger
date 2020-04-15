@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/uber/jaeger-lib/metrics"
 	"go.uber.org/zap"
 
@@ -63,7 +62,7 @@ func (t *tableMeta) materialize() {
 	t.queryStmt = fmt.Sprintf(t.queryStmt, t.tableName)
 }
 
-var schemas = map[schemaVersion]*tableMeta{
+var schemas = map[schemaVersion]tableMeta{
 	previousVersion: {
 		tableName:       "operation_names",
 		insertStmt:      "INSERT INTO %s(service_name, operation_name) VALUES (?, ?)",
@@ -90,7 +89,7 @@ var schemas = map[schemaVersion]*tableMeta{
 type OperationNamesStorage struct {
 	// CQL statements are public so that Cassandra2 storage can override them
 	schemaVersion  schemaVersion
-	table          *tableMeta
+	table          tableMeta
 	session        cassandra.Session
 	writeCacheTTL  time.Duration
 	metrics        *casMetrics.Table
@@ -178,7 +177,7 @@ func getOperationsV1(
 		})
 	}
 	if err := iter.Close(); err != nil {
-		err = errors.Wrap(err, "Error reading operation_names from storage")
+		err = fmt.Errorf("error reading operation_names from storage: %w", err)
 		return nil, err
 	}
 
@@ -209,7 +208,7 @@ func getOperationsV2(
 		})
 	}
 	if err := iter.Close(); err != nil {
-		err = errors.Wrap(err, fmt.Sprintf("Error reading %s from storage", s.table.tableName))
+		err = fmt.Errorf("error reading %s from storage: %w", s.table.tableName, err)
 		return nil, err
 	}
 	return operations, nil

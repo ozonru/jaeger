@@ -14,6 +14,10 @@
 
 package ports
 
+import (
+	"strconv"
+)
+
 const (
 	// AgentJaegerThriftCompactUDP is the default port for receiving Jaeger Thrift over UDP in compact encoding
 	AgentJaegerThriftCompactUDP = 6831
@@ -28,8 +32,6 @@ const (
 
 	// CollectorGRPC is the default port for gRPC server for sending spans
 	CollectorGRPC = 14250
-	// CollectorTChannel is the default port for TChannel server for sending spans
-	CollectorTChannel = 14267
 	// CollectorHTTP is the default port for HTTP server for sending spans (e.g. /api/traces endpoint)
 	CollectorHTTP = 14268
 	// CollectorAdminHTTP is the default admin HTTP port (health check, metrics, etc.)
@@ -43,3 +45,8 @@ const (
 	// IngesterAdminHTTP is the default admin HTTP port (health check, metrics, etc.)
 	IngesterAdminHTTP = 14270
 )
+
+// PortToHostPort converts the port into a host:port address string
+func PortToHostPort(port int) string {
+	return ":" + strconv.Itoa(port)
+}

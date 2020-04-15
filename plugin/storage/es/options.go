@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"github.com/jaegertracing/jaeger/pkg/config/tlscfg"
 	"github.com/jaegertracing/jaeger/pkg/es/config"
 	"github.com/jaegertracing/jaeger/storage/spanstore"
 )
@@ -41,11 +42,6 @@ const (
 	suffixBulkActions         = ".bulk.actions"
 	suffixBulkFlushInterval   = ".bulk.flush-interval"
 	suffixTimeout             = ".timeout"
-	suffixTLS                 = ".tls"
-	suffixCert                = ".tls.cert"
-	suffixKey                 = ".tls.key"
-	suffixCA                  = ".tls.ca"
-	suffixSkipHostVerify      = ".tls.skip-host-verify"
 	suffixIndexPrefix         = ".index-prefix"
 	suffixTagsAsFields        = ".tags-as-fields"
 	suffixTagsAsFieldsAll     = suffixTagsAsFields + ".all"
@@ -55,6 +51,8 @@ const (
 	suffixCreateIndexTemplate = ".create-index-templates"
 	suffixEnabled             = ".enabled"
 	suffixVersion             = ".version"
+
+	defaultServerUrl = "http://127.0.0.1:9200"
 )
 
 // TODO this should be moved next to config.Configuration struct (maybe ./flags package)
@@ -63,43 +61,41 @@ const (
 // to bind them to command line flag and apply overlays, so that some configurations
 // (e.g. archive) may be underspecified and infer the rest of its parameters from primary.
 type Options struct {
-	primary *namespaceConfig
+	Primary namespaceConfig `mapstructure:",squash"`
 
 	others map[string]*namespaceConfig
 }
 
-// the Servers field in config.Configuration is a list, which we cannot represent with flags.
-// This struct adds a plain string field that can be bound to flags and is then parsed when
-// preparing the actual config.Configuration.
 type namespaceConfig struct {
-	config.Configuration
-	servers   string
-	namespace string
+	config.Configuration `mapstructure:",squash"`
+	namespace            string
 }
 
 // NewOptions creates a new Options struct.
 func NewOptions(primaryNamespace string, otherNamespaces ...string) *Options {
 	// TODO all default values should be defined via cobra flags
 	options := &Options{
-		primary: &namespaceConfig{
+		Primary: namespaceConfig{
 			Configuration: config.Configuration{
-				Username:             "",
-				Password:             "",
-				Sniffer:              false,
-				MaxSpanAge:           72 * time.Hour,
-				MaxNumSpans:          10000,
-				NumShards:            5,
-				NumReplicas:          1,
-				BulkSize:             5 * 1000 * 1000,
-				BulkWorkers:          1,
-				BulkActions:          1000,
-				BulkFlushInterval:    time.Millisecond * 200,
-				TagDotReplacement:    "@",
+				Username:          "",
+				Password:          "",
+				Sniffer:           false,
+				MaxSpanAge:        72 * time.Hour,
+				MaxNumSpans:       10000,
+				NumShards:         5,
+				NumReplicas:       1,
+				BulkSize:          5 * 1000 * 1000,
+				BulkWorkers:       1,
+				BulkActions:       1000,
+				BulkFlushInterval: time.Millisecond * 200,
+				Tags: config.TagsAsFields{
+					DotReplacement: "@",
+				},
 				Enabled:              true,
 				CreateIndexTemplates: true,
 				Version:              0,
+				Servers:              []string{defaultServerUrl},
 			},
-			servers:   "http://127.0.0.1:9200",
 			namespace: primaryNamespace,
 		},
 		others: make(map[string]*namespaceConfig, len(otherNamespaces)),
@@ -112,9 +108,17 @@ func NewOptions(primaryNamespace string, otherNamespaces ...string) *Options {
 	return options
 }
 
+func (config *namespaceConfig) getTLSFlagsConfig() tlscfg.ClientFlagsConfig {
+	return tlscfg.ClientFlagsConfig{
+		Prefix:         config.namespace,
+		ShowEnabled:    true,
+		ShowServerName: true,
+	}
+}
+
 // AddFlags adds flags for Options
 func (opt *Options) AddFlags(flagSet *flag.FlagSet) {
-	addFlags(flagSet, opt.primary)
+	addFlags(flagSet, &opt.Primary)
 	for _, cfg := range opt.others {
 		addFlags(flagSet, cfg)
 	}
@@ -139,7 +143,7 @@ func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
 		"The sniffer config for Elasticsearch; client uses sniffing process to find all nodes automatically, disable if not required")
 	flagSet.String(
 		nsConfig.namespace+suffixServerURLs,
-		nsConfig.servers,
+		defaultServerUrl,
 		"The comma-separated list of Elasticsearch servers, must be full url i.e. http://localhost:9200")
 	flagSet.Duration(
 		nsConfig.namespace+suffixTimeout,
@@ -177,41 +181,21 @@ func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
 		nsConfig.namespace+suffixBulkFlushInterval,
 		nsConfig.BulkFlushInterval,
 		"A time.Duration after which bulk requests are committed, regardless of other thresholds. Set to zero to disable. By default, this is disabled.")
-	flagSet.Bool(
-		nsConfig.namespace+suffixTLS,
-		nsConfig.TLS.Enabled,
-		"Enable TLS with client certificates.")
-	flagSet.Bool(
-		nsConfig.namespace+suffixSkipHostVerify,
-		nsConfig.TLS.SkipHostVerify,
-		"(insecure) Skip server's certificate chain and host name verification")
-	flagSet.String(
-		nsConfig.namespace+suffixCert,
-		nsConfig.TLS.CertPath,
-		"Path to TLS certificate file")
-	flagSet.String(
-		nsConfig.namespace+suffixKey,
-		nsConfig.TLS.KeyPath,
-		"Path to TLS key file")
-	flagSet.String(
-		nsConfig.namespace+suffixCA,
-		nsConfig.TLS.CaPath,
-		"Path to TLS CA file")
 	flagSet.String(
 		nsConfig.namespace+suffixIndexPrefix,
 		nsConfig.IndexPrefix,
 		"Optional prefix of Jaeger indices. For example \"production\" creates \"production-jaeger-*\".")
 	flagSet.Bool(
 		nsConfig.namespace+suffixTagsAsFieldsAll,
-		nsConfig.AllTagsAsFields,
+		nsConfig.Tags.AllAsFields,
 		"(experimental) Store all span and process tags as object fields. If true "+suffixTagsFile+" is ignored. Binary tags are always stored as nested objects.")
 	flagSet.String(
 		nsConfig.namespace+suffixTagsFile,
-		nsConfig.TagsFilePath,
+		nsConfig.Tags.File,
 		"(experimental) Optional path to a file containing tag keys which will be stored as object fields. Each key should be on a separate line.")
 	flagSet.String(
 		nsConfig.namespace+suffixTagDeDotChar,
-		nsConfig.TagDotReplacement,
+		nsConfig.Tags.DotReplacement,
 		"(experimental) The character used to replace dots (\".\") in tag keys stored as object fields.")
 	flagSet.Bool(
 		nsConfig.namespace+suffixReadAlias,
@@ -233,11 +217,12 @@ func addFlags(flagSet *flag.FlagSet, nsConfig *namespaceConfig) {
 			nsConfig.Enabled,
 			"Enable extra storage")
 	}
+	nsConfig.getTLSFlagsConfig().AddFlags(flagSet)
 }
 
 // InitFromViper initializes Options with properties from viper
 func (opt *Options) InitFromViper(v *viper.Viper) {
-	initFromViper(opt.primary, v)
+	initFromViper(&opt.Primary, v)
 	for _, cfg := range opt.others {
 		initFromViper(cfg, v)
 	}
@@ -248,7 +233,7 @@ func initFromViper(cfg *namespaceConfig, v *viper.Viper) {
 	cfg.Password = v.GetString(cfg.namespace + suffixPassword)
 	cfg.TokenFilePath = v.GetString(cfg.namespace + suffixTokenPath)
 	cfg.Sniffer = v.GetBool(cfg.namespace + suffixSniffer)
-	cfg.servers = stripWhiteSpace(v.GetString(cfg.namespace + suffixServerURLs))
+	cfg.Servers = strings.Split(stripWhiteSpace(v.GetString(cfg.namespace+suffixServerURLs)), ",")
 	cfg.MaxSpanAge = v.GetDuration(cfg.namespace + suffixMaxSpanAge)
 	cfg.MaxNumSpans = v.GetInt(cfg.namespace + suffixMaxNumSpans)
 	cfg.NumShards = v.GetInt64(cfg.namespace + suffixNumShards)
@@ -258,27 +243,22 @@ func initFromViper(cfg *namespaceConfig, v *viper.Viper) {
 	cfg.BulkActions = v.GetInt(cfg.namespace + suffixBulkActions)
 	cfg.BulkFlushInterval = v.GetDuration(cfg.namespace + suffixBulkFlushInterval)
 	cfg.Timeout = v.GetDuration(cfg.namespace + suffixTimeout)
-	cfg.TLS.Enabled = v.GetBool(cfg.namespace + suffixTLS)
-	cfg.TLS.SkipHostVerify = v.GetBool(cfg.namespace + suffixSkipHostVerify)
-	cfg.TLS.CertPath = v.GetString(cfg.namespace + suffixCert)
-	cfg.TLS.KeyPath = v.GetString(cfg.namespace + suffixKey)
-	cfg.TLS.CaPath = v.GetString(cfg.namespace + suffixCA)
 	cfg.IndexPrefix = v.GetString(cfg.namespace + suffixIndexPrefix)
-	cfg.AllTagsAsFields = v.GetBool(cfg.namespace + suffixTagsAsFieldsAll)
-	cfg.TagsFilePath = v.GetString(cfg.namespace + suffixTagsFile)
-	cfg.TagDotReplacement = v.GetString(cfg.namespace + suffixTagDeDotChar)
+	cfg.Tags.AllAsFields = v.GetBool(cfg.namespace + suffixTagsAsFieldsAll)
+	cfg.Tags.File = v.GetString(cfg.namespace + suffixTagsFile)
+	cfg.Tags.DotReplacement = v.GetString(cfg.namespace + suffixTagDeDotChar)
 	cfg.UseReadWriteAliases = v.GetBool(cfg.namespace + suffixReadAlias)
 	cfg.Enabled = v.GetBool(cfg.namespace + suffixEnabled)
 	cfg.CreateIndexTemplates = v.GetBool(cfg.namespace + suffixCreateIndexTemplate)
 	cfg.Version = uint(v.GetInt(cfg.namespace + suffixVersion))
 	// TODO: Need to figure out a better way for do this.
 	cfg.AllowTokenFromContext = v.GetBool(spanstore.StoragePropagationKey)
+	cfg.TLS = cfg.getTLSFlagsConfig().InitFromViper(v)
 }
 
 // GetPrimary returns primary configuration.
 func (opt *Options) GetPrimary() *config.Configuration {
-	opt.primary.Servers = strings.Split(opt.primary.servers, ",")
-	return &opt.primary.Configuration
+	return &opt.Primary.Configuration
 }
 
 // Get returns auxiliary named configuration.
@@ -288,11 +268,10 @@ func (opt *Options) Get(namespace string) *config.Configuration {
 		nsCfg = &namespaceConfig{}
 		opt.others[namespace] = nsCfg
 	}
-	nsCfg.Configuration.ApplyDefaults(&opt.primary.Configuration)
-	if nsCfg.servers == "" {
-		nsCfg.servers = opt.primary.servers
+	nsCfg.Configuration.ApplyDefaults(&opt.Primary.Configuration)
+	if len(nsCfg.Configuration.Servers) == 0 {
+		nsCfg.Servers = opt.Primary.Servers
 	}
-	nsCfg.Servers = strings.Split(nsCfg.servers, ",")
 	return &nsCfg.Configuration
 }
 
