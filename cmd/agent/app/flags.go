@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,8 +18,11 @@ package app
 import (
 	"flag"
 	"fmt"
+	"strconv"
 
 	"github.com/spf13/viper"
+
+	"github.com/jaegertracing/jaeger/ports"
 )
 
 const (
@@ -32,21 +36,21 @@ const (
 var defaultProcessors = []struct {
 	model    Model
 	protocol Protocol
-	hostPort string
+	port     int
 }{
-	{model: "zipkin", protocol: "compact", hostPort: ":5775"},
-	{model: "jaeger", protocol: "compact", hostPort: ":6831"},
-	{model: "jaeger", protocol: "binary", hostPort: ":6832"},
+	{model: "zipkin", protocol: "compact", port: ports.AgentZipkinThriftCompactUDP},
+	{model: "jaeger", protocol: "compact", port: ports.AgentJaegerThriftCompactUDP},
+	{model: "jaeger", protocol: "binary", port: ports.AgentJaegerThriftBinaryUDP},
 }
 
 // AddFlags adds flags for Builder.
 func AddFlags(flags *flag.FlagSet) {
-	for _, processor := range defaultProcessors {
-		prefix := fmt.Sprintf("processor.%s-%s.", processor.model, processor.protocol)
+	for _, p := range defaultProcessors {
+		prefix := fmt.Sprintf("processor.%s-%s.", p.model, p.protocol)
 		flags.Int(prefix+suffixWorkers, defaultServerWorkers, "how many workers the processor should run")
 		flags.Int(prefix+suffixServerQueueSize, defaultQueueSize, "length of the queue for the UDP server")
 		flags.Int(prefix+suffixServerMaxPacketSize, defaultMaxPacketSize, "max packet size for the UDP server")
-		flags.String(prefix+suffixServerHostPort, processor.hostPort, "host:port for the UDP server")
+		flags.String(prefix+suffixServerHostPort, ":"+strconv.Itoa(p.port), "host:port for the UDP server")
 	}
 	flags.String(
 		httpServerHostPort,
@@ -62,10 +66,19 @@ func (b *Builder) InitFromViper(v *viper.Viper) *Builder {
 		p.Workers = v.GetInt(prefix + suffixWorkers)
 		p.Server.QueueSize = v.GetInt(prefix + suffixServerQueueSize)
 		p.Server.MaxPacketSize = v.GetInt(prefix + suffixServerMaxPacketSize)
-		p.Server.HostPort = v.GetString(prefix + suffixServerHostPort)
+		p.Server.HostPort = portNumToHostPort(v.GetString(prefix + suffixServerHostPort))
 		b.Processors = append(b.Processors, *p)
 	}
 
-	b.HTTPServer.HostPort = v.GetString(httpServerHostPort)
+	b.HTTPServer.HostPort = portNumToHostPort(v.GetString(httpServerHostPort))
 	return b
+}
+
+// portNumToHostPort checks if the value is a raw integer port number,
+// and converts it to ":{port}" host-port string, otherwise leaves it as is.
+func portNumToHostPort(v string) string {
+	if _, err := strconv.Atoi(v); err == nil {
+		return ":" + v
+	}
+	return v
 }

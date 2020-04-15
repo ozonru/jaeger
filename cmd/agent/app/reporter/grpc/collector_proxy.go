@@ -15,84 +15,50 @@
 package grpc
 
 import (
-	"crypto/x509"
-	"errors"
-
-	"github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/uber/jaeger-lib/metrics"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/balancer/roundrobin"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/resolver"
-	"google.golang.org/grpc/resolver/manual"
 
 	"github.com/jaegertracing/jaeger/cmd/agent/app/configmanager"
 	grpcManager "github.com/jaegertracing/jaeger/cmd/agent/app/configmanager/grpc"
-	aReporter "github.com/jaegertracing/jaeger/cmd/agent/app/reporter"
+	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter"
 )
 
 // ProxyBuilder holds objects communicating with collector
 type ProxyBuilder struct {
-	reporter aReporter.Reporter
+	reporter *reporter.ClientMetricsReporter
 	manager  configmanager.ClientConfigManager
 	conn     *grpc.ClientConn
 }
 
-var systemCertPool = x509.SystemCertPool // to allow overriding in unit test
-
 // NewCollectorProxy creates ProxyBuilder
-func NewCollectorProxy(o *Options, agentTags map[string]string, mFactory metrics.Factory, logger *zap.Logger) (*ProxyBuilder, error) {
-	if len(o.CollectorHostPort) == 0 {
-		return nil, errors.New("could not create collector proxy, address is missing")
+func NewCollectorProxy(builder *ConnBuilder, agentTags map[string]string, mFactory metrics.Factory, logger *zap.Logger) (*ProxyBuilder, error) {
+	conn, err := builder.CreateConnection(logger)
+	if err != nil {
+		return nil, err
 	}
-	var dialOption grpc.DialOption
-	if o.TLS { // user requested a secure connection
-		var creds credentials.TransportCredentials
-		if len(o.TLSCA) == 0 { // no truststore given, use SystemCertPool
-			pool, err := systemCertPool()
-			if err != nil {
-				return nil, err
-			}
-			creds = credentials.NewClientTLSFromCert(pool, o.TLSServerName)
-		} else { // setup user specified truststore
-			var err error
-			creds, err = credentials.NewClientTLSFromFile(o.TLSCA, o.TLSServerName)
-			if err != nil {
-				return nil, err
-			}
-		}
-		dialOption = grpc.WithTransportCredentials(creds)
-	} else { // insecure connection
-		dialOption = grpc.WithInsecure()
-	}
-
-	var target string
-	if len(o.CollectorHostPort) > 1 {
-		r, _ := manual.GenerateAndRegisterManualResolver()
-		var resolvedAddrs []resolver.Address
-		for _, addr := range o.CollectorHostPort {
-			resolvedAddrs = append(resolvedAddrs, resolver.Address{Addr: addr})
-		}
-		r.InitialAddrs(resolvedAddrs)
-		target = r.Scheme() + ":///round_robin"
-	} else {
-		target = o.CollectorHostPort[0]
-	}
-	// It does not return error if the collector is not running
-	conn, _ := grpc.Dial(target,
-		dialOption,
-		grpc.WithBalancerName(roundrobin.Name),
-		grpc.WithUnaryInterceptor(grpc_retry.UnaryClientInterceptor(grpc_retry.WithMax(o.MaxRetry))))
 	grpcMetrics := mFactory.Namespace(metrics.NSOptions{Name: "", Tags: map[string]string{"protocol": "grpc"}})
+	r1 := NewReporter(conn, agentTags, logger)
+	r2 := reporter.WrapWithMetrics(r1, grpcMetrics)
+	r3 := reporter.WrapWithClientMetrics(reporter.ClientMetricsReporterParams{
+		Reporter:       r2,
+		Logger:         logger,
+		MetricsFactory: mFactory,
+	})
 	return &ProxyBuilder{
 		conn:     conn,
-		reporter: aReporter.WrapWithMetrics(NewReporter(conn, agentTags, logger), grpcMetrics),
-		manager:  configmanager.WrapWithMetrics(grpcManager.NewConfigManager(conn), grpcMetrics)}, nil
+		reporter: r3,
+		manager:  configmanager.WrapWithMetrics(grpcManager.NewConfigManager(conn), grpcMetrics),
+	}, nil
+}
+
+// GetConn returns grpc conn
+func (b ProxyBuilder) GetConn() *grpc.ClientConn {
+	return b.conn
 }
 
 // GetReporter returns Reporter
-func (b ProxyBuilder) GetReporter() aReporter.Reporter {
+func (b ProxyBuilder) GetReporter() reporter.Reporter {
 	return b.reporter
 }
 
@@ -103,5 +69,6 @@ func (b ProxyBuilder) GetManager() configmanager.ClientConfigManager {
 
 // Close closes connections used by proxy.
 func (b ProxyBuilder) Close() error {
+	b.reporter.Close()
 	return b.conn.Close()
 }

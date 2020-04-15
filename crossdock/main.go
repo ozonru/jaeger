@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -102,10 +103,14 @@ func (h *clientHandler) isInitialized() bool {
 	return atomic.LoadUint64(&h.initialized) != 0
 }
 
+func is2xxStatusCode(statusCode int) bool {
+	return statusCode >= 200 && statusCode <= 299
+}
+
 func httpHealthCheck(logger *zap.Logger, service, healthURL string) {
 	for i := 0; i < 240; i++ {
 		res, err := http.Get(healthURL)
-		if err == nil && res.StatusCode == 204 {
+		if err == nil && is2xxStatusCode(res.StatusCode) {
 			logger.Info("Health check successful", zap.String("service", service))
 			return
 		}

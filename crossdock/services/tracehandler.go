@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,6 +18,7 @@ package services
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -24,7 +26,6 @@ import (
 	"time"
 
 	"github.com/crossdock/crossdock-go"
-	"github.com/pkg/errors"
 	"github.com/uber/jaeger-client-go"
 	"go.uber.org/zap"
 
@@ -144,7 +145,7 @@ func (h *TraceHandler) adaptiveSamplingTest(service string, request *traceReques
 		h.logger.Info(fmt.Sprintf("Waiting for adaptive sampling probabilities, iteration %d out of 20", i+1))
 		rate, err = h.agent.GetSamplingRate(service, request.Operation)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not retrieve sampling rate from agent")
+			return nil, fmt.Errorf("could not retrieve sampling rate from agent: %w", err)
 		}
 		if !isDefaultProbability(rate) {
 			break
@@ -209,7 +210,7 @@ func (h *TraceHandler) createTracesLoop(service string, request traceRequest, st
 
 func (h *TraceHandler) createAndRetrieveTraces(service string, request *traceRequest) ([]*ui.Trace, error) {
 	if err := h.createTrace(service, request); err != nil {
-		return nil, errors.Wrap(err, "failed to create trace")
+		return nil, fmt.Errorf("failed to create trace: %w", err)
 	}
 	traces := h.getTraces(service, request.Operation, request.Tags)
 	if len(traces) == 0 {

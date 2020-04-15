@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,12 +18,12 @@ package es
 import (
 	"bufio"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 	"github.com/uber/jaeger-lib/metrics"
 	"go.uber.org/zap"
@@ -73,19 +74,27 @@ func (f *Factory) InitFromViper(v *viper.Viper) {
 	f.archiveConfig = f.Options.Get(archiveNamespace)
 }
 
+func (f *Factory) InitFromOptions(o Options) {
+	f.Options = &o
+	f.primaryConfig = f.Options.GetPrimary()
+	if cfg := f.Options.Get(archiveNamespace); cfg != nil {
+		f.archiveConfig = cfg
+	}
+}
+
 // Initialize implements storage.Factory
 func (f *Factory) Initialize(metricsFactory metrics.Factory, logger *zap.Logger) error {
 	f.metricsFactory, f.logger = metricsFactory, logger
 
 	primaryClient, err := f.primaryConfig.NewClient(logger, metricsFactory)
 	if err != nil {
-		return errors.Wrap(err, "failed to create primary Elasticsearch client")
+		return fmt.Errorf("failed to create primary Elasticsearch client: %w", err)
 	}
 	f.primaryClient = primaryClient
-	if f.archiveConfig.IsEnabled() {
+	if f.archiveConfig.IsStorageEnabled() {
 		f.archiveClient, err = f.archiveConfig.NewClient(logger, metricsFactory)
 		if err != nil {
-			return errors.Wrap(err, "failed to create archive Elasticsearch client")
+			return fmt.Errorf("failed to create archive Elasticsearch client: %w", err)
 		}
 	}
 	return nil
@@ -126,20 +135,18 @@ func loadTagsFromFile(filePath string) ([]string, error) {
 
 // CreateArchiveSpanReader implements storage.ArchiveFactory
 func (f *Factory) CreateArchiveSpanReader() (spanstore.Reader, error) {
-	cfg := f.Options.Get(archiveNamespace)
-	if !cfg.Enabled {
+	if !f.archiveConfig.IsStorageEnabled() {
 		return nil, nil
 	}
-	return createSpanReader(f.metricsFactory, f.logger, f.archiveClient, cfg, true)
+	return createSpanReader(f.metricsFactory, f.logger, f.archiveClient, f.archiveConfig, true)
 }
 
 // CreateArchiveSpanWriter implements storage.ArchiveFactory
 func (f *Factory) CreateArchiveSpanWriter() (spanstore.Writer, error) {
-	cfg := f.Options.Get(archiveNamespace)
-	if !cfg.Enabled {
+	if !f.archiveConfig.IsStorageEnabled() {
 		return nil, nil
 	}
-	return createSpanWriter(f.metricsFactory, f.logger, f.archiveClient, cfg, true)
+	return createSpanWriter(f.metricsFactory, f.logger, f.archiveClient, f.archiveConfig, true)
 }
 
 func createSpanReader(
@@ -178,8 +185,8 @@ func createSpanWriter(
 		}
 	}
 
-	spanMapping, serviceMapping := GetMappings(cfg.GetNumShards(), cfg.GetNumReplicas())
-	return esSpanStore.NewSpanWriter(esSpanStore.SpanWriterParams{
+	spanMapping, serviceMapping := GetMappings(cfg.GetNumShards(), cfg.GetNumReplicas(), client.GetVersion())
+	writer := esSpanStore.NewSpanWriter(esSpanStore.SpanWriterParams{
 		Client:              client,
 		Logger:              logger,
 		MetricsFactory:      mFactory,
@@ -189,13 +196,22 @@ func createSpanWriter(
 		TagDotReplacement:   cfg.GetTagDotReplacement(),
 		Archive:             archive,
 		UseReadWriteAliases: cfg.GetUseReadWriteAliases(),
-		SpanMapping:         spanMapping,
-		ServiceMapping:      serviceMapping,
-	}), nil
+	})
+	if cfg.IsCreateIndexTemplates() {
+		err := writer.CreateTemplates(spanMapping, serviceMapping)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return writer, nil
 }
 
 // GetMappings returns span and service mappings
-func GetMappings(shards, replicas int64) (string, string) {
+func GetMappings(shards, replicas int64, esVersion uint) (string, string) {
+	if esVersion == 7 {
+		return fixMapping(loadMapping("/jaeger-span-7.json"), shards, replicas),
+			fixMapping(loadMapping("/jaeger-service-7.json"), shards, replicas)
+	}
 	return fixMapping(loadMapping("/jaeger-span.json"), shards, replicas),
 		fixMapping(loadMapping("/jaeger-service.json"), shards, replicas)
 }

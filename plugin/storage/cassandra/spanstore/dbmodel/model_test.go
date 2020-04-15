@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,5 +30,5 @@ func TestTagInsertionString(t *testing.T) {
 
 func TestTraceIDString(t *testing.T) {
 	id := TraceIDFromDomain(model.NewTraceID(1, 1))
-	assert.Equal(t, "10000000000000001", id.String())
+	assert.Equal(t, "00000000000000010000000000000001", id.String())
 }

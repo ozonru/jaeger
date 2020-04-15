@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,10 +19,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/uber/jaeger-lib/metrics"
 	"go.uber.org/zap"
-	"gopkg.in/olivere/elastic.v5"
 
 	"github.com/jaegertracing/jaeger/model"
 	"github.com/jaegertracing/jaeger/pkg/cache"
@@ -49,12 +48,8 @@ type SpanWriter struct {
 	writerMetrics    spanWriterMetrics // TODO: build functions to wrap around each Do fn
 	indexCache       cache.Cache
 	serviceWriter    serviceWriter
-	numShards        int64
-	numReplicas      int64
 	spanConverter    dbmodel.FromDomain
 	spanServiceIndex spanAndServiceIndexFn
-	spanMapping      string
-	serviceMapping   string
 }
 
 // SpanWriterParams holds constructor parameters for NewSpanWriter
@@ -68,8 +63,6 @@ type SpanWriterParams struct {
 	TagDotReplacement   string
 	Archive             bool
 	UseReadWriteAliases bool
-	SpanMapping         string
-	ServiceMapping      string
 }
 
 // NewSpanWriter creates a new SpanWriter for use
@@ -77,7 +70,7 @@ func NewSpanWriter(p SpanWriterParams) *SpanWriter {
 	ctx := context.Background()
 
 	// TODO: Configurable TTL
-	serviceOperationStorage := NewServiceOperationStorage(ctx, p.Client, p.Logger, time.Hour*12)
+	serviceOperationStorage := NewServiceOperationStorage(p.Client, p.Logger, time.Hour*12)
 	return &SpanWriter{
 		ctx:    ctx,
 		client: p.Client,
@@ -92,11 +85,22 @@ func NewSpanWriter(p SpanWriterParams) *SpanWriter {
 				TTL: 48 * time.Hour,
 			},
 		),
-		spanMapping:      p.SpanMapping,
-		serviceMapping:   p.ServiceMapping,
 		spanConverter:    dbmodel.NewFromDomain(p.AllTagsAsFields, p.TagKeysAsFields, p.TagDotReplacement),
 		spanServiceIndex: getSpanAndServiceIndexFn(p.Archive, p.UseReadWriteAliases, p.IndexPrefix),
 	}
+}
+
+// CreateTemplates creates index templates.
+func (s *SpanWriter) CreateTemplates(spanTemplate, serviceTemplate string) error {
+	_, err := s.client.CreateTemplate("jaeger-span").Body(spanTemplate).Do(context.Background())
+	if err != nil {
+		return err
+	}
+	_, err = s.client.CreateTemplate("jaeger-service").Body(serviceTemplate).Do(context.Background())
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // spanAndServiceIndexFn returns names of span and service indices
@@ -132,13 +136,7 @@ func (s *SpanWriter) WriteSpan(span *model.Span) error {
 	spanIndexName, serviceIndexName := s.spanServiceIndex(span.StartTime)
 	jsonSpan := s.spanConverter.FromDomainEmbedProcess(span)
 	if serviceIndexName != "" {
-		if err := s.createIndex(serviceIndexName, s.serviceMapping, jsonSpan); err != nil {
-			return err
-		}
 		s.writeService(serviceIndexName, jsonSpan)
-	}
-	if err := s.createIndex(spanIndexName, s.spanMapping, jsonSpan); err != nil {
-		return err
 	}
 	s.writeSpan(spanIndexName, jsonSpan)
 	return nil
@@ -147,31 +145,6 @@ func (s *SpanWriter) WriteSpan(span *model.Span) error {
 // Close closes SpanWriter
 func (s *SpanWriter) Close() error {
 	return s.client.Close()
-}
-
-func (s *SpanWriter) createIndex(indexName string, mapping string, jsonSpan *dbmodel.Span) error {
-	if !keyInCache(indexName, s.indexCache) {
-		start := time.Now()
-		exists, _ := s.client.IndexExists(indexName).Do(s.ctx) // don't need to check the error because the exists variable will be false anyway if there is an error
-		if !exists {
-			// if there are multiple collectors writing to the same elasticsearch host a race condition can occur - create the index multiple times
-			// we check for the error type to minimize errors
-			_, err := s.client.CreateIndex(indexName).Body(mapping).Do(s.ctx)
-			s.writerMetrics.indexCreate.Emit(err, time.Since(start))
-			if err != nil {
-				eErr, ok := err.(*elastic.Error)
-				if !ok || eErr.Details != nil &&
-					// ES 5.x
-					(eErr.Details.Type != "index_already_exists_exception" &&
-						// ES 6.x
-						eErr.Details.Type != "resource_already_exists_exception") {
-					return s.logError(jsonSpan, err, "Failed to create index", s.logger)
-				}
-			}
-		}
-		writeCache(indexName, s.indexCache)
-	}
-	return nil
 }
 
 func keyInCache(key string, c cache.Cache) bool {
@@ -188,13 +161,4 @@ func (s *SpanWriter) writeService(indexName string, jsonSpan *dbmodel.Span) {
 
 func (s *SpanWriter) writeSpan(indexName string, jsonSpan *dbmodel.Span) {
 	s.client.Index().Index(indexName).Type(spanType).BodyJson(&jsonSpan).Add()
-}
-
-func (s *SpanWriter) logError(span *dbmodel.Span, err error, msg string, logger *zap.Logger) error {
-	logger.
-		With(zap.String("trace_id", string(span.TraceID))).
-		With(zap.String("span_id", string(span.SpanID))).
-		With(zap.Error(err)).
-		Error(msg)
-	return errors.Wrap(err, msg)
 }

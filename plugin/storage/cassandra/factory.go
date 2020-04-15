@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,6 +16,7 @@
 package cassandra
 
 import (
+	"errors"
 	"flag"
 
 	"github.com/spf13/viper"
@@ -25,6 +27,7 @@ import (
 	"github.com/jaegertracing/jaeger/pkg/cassandra/config"
 	cDepStore "github.com/jaegertracing/jaeger/plugin/storage/cassandra/dependencystore"
 	cSpanStore "github.com/jaegertracing/jaeger/plugin/storage/cassandra/spanstore"
+	"github.com/jaegertracing/jaeger/plugin/storage/cassandra/spanstore/dbmodel"
 	"github.com/jaegertracing/jaeger/storage"
 	"github.com/jaegertracing/jaeger/storage/dependencystore"
 	"github.com/jaegertracing/jaeger/storage/spanstore"
@@ -70,6 +73,15 @@ func (f *Factory) InitFromViper(v *viper.Viper) {
 	}
 }
 
+// InitFromOptions initializes factory from options.
+func (f *Factory) InitFromOptions(o *Options) {
+	f.Options = o
+	f.primaryConfig = o.GetPrimary()
+	if cfg := f.Options.Get(archiveStorageConfig); cfg != nil {
+		f.archiveConfig = cfg // this is so stupid - see https://golang.org/doc/faq#nil_error
+	}
+}
+
 // Initialize implements storage.Factory
 func (f *Factory) Initialize(metricsFactory metrics.Factory, logger *zap.Logger) error {
 	f.primaryMetricsFactory = metricsFactory.Namespace(metrics.NSOptions{Name: "cassandra", Tags: nil})
@@ -101,7 +113,11 @@ func (f *Factory) CreateSpanReader() (spanstore.Reader, error) {
 
 // CreateSpanWriter implements storage.Factory
 func (f *Factory) CreateSpanWriter() (spanstore.Writer, error) {
-	return cSpanStore.NewSpanWriter(f.primarySession, f.Options.SpanStoreWriteCacheTTL, f.primaryMetricsFactory, f.logger), nil
+	options, err := writerOptions(f.Options)
+	if err != nil {
+		return nil, err
+	}
+	return cSpanStore.NewSpanWriter(f.primarySession, f.Options.SpanStoreWriteCacheTTL, f.primaryMetricsFactory, f.logger, options...), nil
 }
 
 // CreateDependencyReader implements storage.Factory
@@ -123,5 +139,38 @@ func (f *Factory) CreateArchiveSpanWriter() (spanstore.Writer, error) {
 	if f.archiveSession == nil {
 		return nil, storage.ErrArchiveStorageNotConfigured
 	}
-	return cSpanStore.NewSpanWriter(f.archiveSession, f.Options.SpanStoreWriteCacheTTL, f.archiveMetricsFactory, f.logger), nil
+	options, err := writerOptions(f.Options)
+	if err != nil {
+		return nil, err
+	}
+	return cSpanStore.NewSpanWriter(f.archiveSession, f.Options.SpanStoreWriteCacheTTL, f.archiveMetricsFactory, f.logger, options...), nil
+}
+
+func writerOptions(opts *Options) ([]cSpanStore.Option, error) {
+	var tagFilters []dbmodel.TagFilter
+
+	// drop all tag filters
+	if !opts.Index.Tags || !opts.Index.ProcessTags || !opts.Index.Logs {
+		tagFilters = append(tagFilters, dbmodel.NewTagFilterDropAll(!opts.Index.Tags, !opts.Index.ProcessTags, !opts.Index.Logs))
+	}
+
+	// black/white list tag filters
+	tagIndexBlacklist := opts.TagIndexBlacklist()
+	tagIndexWhitelist := opts.TagIndexWhitelist()
+	if len(tagIndexBlacklist) > 0 && len(tagIndexWhitelist) > 0 {
+		return nil, errors.New("only one of TagIndexBlacklist and TagIndexWhitelist can be specified")
+	}
+	if len(tagIndexBlacklist) > 0 {
+		tagFilters = append(tagFilters, dbmodel.NewBlacklistFilter(tagIndexBlacklist))
+	} else if len(tagIndexWhitelist) > 0 {
+		tagFilters = append(tagFilters, dbmodel.NewWhitelistFilter(tagIndexWhitelist))
+	}
+
+	if len(tagFilters) == 0 {
+		return nil, nil
+	} else if len(tagFilters) == 1 {
+		return []cSpanStore.Option{cSpanStore.TagFilter(tagFilters[0])}, nil
+	}
+
+	return []cSpanStore.Option{cSpanStore.TagFilter(dbmodel.NewChainedTagFilter(tagFilters...))}, nil
 }

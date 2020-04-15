@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -157,7 +158,7 @@ func TestGetThroughput(t *testing.T) {
 		{
 			caption:       "failure",
 			queryError:    errors.New("query error"),
-			expectedError: "Error reading throughput from storage: query error",
+			expectedError: "error reading throughput from storage: query error",
 		},
 	}
 	for _, tc := range testCases {
@@ -236,7 +237,7 @@ func TestGetProbabilitiesAndQPS(t *testing.T) {
 		{
 			caption:       "failure",
 			queryError:    errors.New("query error"),
-			expectedError: "Error reading probabilities and qps from storage: query error",
+			expectedError: "error reading probabilities and qps from storage: query error",
 		},
 	}
 	for _, tc := range testCases {
@@ -302,7 +303,7 @@ func TestGetLatestProbabilities(t *testing.T) {
 		{
 			caption:       "failure",
 			queryError:    errors.New("query error"),
-			expectedError: "Error reading probabilities from storage: query error",
+			expectedError: "error reading probabilities from storage: query error",
 		},
 	}
 	for _, tc := range testCases {
@@ -366,13 +367,13 @@ func TestThroughputToString(t *testing.T) {
 		{Service: "svc2", Operation: "op2", Count: 2, Probabilities: map[string]struct{}{}},
 	}
 	str := throughputToString(throughput)
-	assert.True(t, "svc1,\"op,1\",1,1\nsvc2,op2,2,\n" == str || "svc2,op2,2,\nsvc1,1\"op,1\",1,1\n" == str)
+	assert.True(t, str == "svc1,\"op,1\",1,1\nsvc2,op2,2,\n" || str == "svc2,op2,2,\nsvc1,1\"op,1\",1,1\n")
 
 	throughput = []*model.Throughput{
 		{Service: "svc1", Operation: "op,1", Count: 1, Probabilities: map[string]struct{}{"1": {}, "2": {}}},
 	}
 	str = throughputToString(throughput)
-	assert.True(t, "svc1,\"op,1\",1,\"1,2\"\n" == str || "svc1,\"op,1\",1,\"2,1\"\n" == str)
+	assert.True(t, str == "svc1,\"op,1\",1,\"1,2\"\n" || str == "svc1,\"op,1\",1,\"2,1\"\n")
 }
 
 func TestStringToThroughput(t *testing.T) {
@@ -450,6 +451,6 @@ func TestStringToProbabilities(t *testing.T) {
 
 func TestProbabilitiesSetToString(t *testing.T) {
 	s := probabilitiesSetToString(map[string]struct{}{"0.000001": {}, "0.000002": {}})
-	assert.True(t, "0.000001,0.000002" == s || "0.000002,0.000001" == s)
+	assert.True(t, s == "0.000001,0.000002" || s == "0.000002,0.000001")
 	assert.Equal(t, "", probabilitiesSetToString(nil))
 }

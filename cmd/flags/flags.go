@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,24 +18,19 @@ package flags
 import (
 	"flag"
 	"fmt"
+	"os"
+	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-
-	hc "github.com/jaegertracing/jaeger/pkg/healthcheck"
-	"github.com/jaegertracing/jaeger/plugin/storage"
 )
 
 const (
-	spanStorageType     = "span-storage.type" // deprecated
-	logLevel            = "log-level"
-	configFile          = "config-file"
-	healthCheckHTTPPort = "health-check-http-port"
+	spanStorageType = "span-storage.type" // deprecated
+	logLevel        = "log-level"
+	configFile      = "config-file"
 )
-
-var defaultHealthCheckPort int
 
 // AddConfigFileFlag adds flags for ExternalConfFlags
 func AddConfigFileFlag(flagSet *flag.FlagSet) {
@@ -47,37 +43,64 @@ func TryLoadConfigFile(v *viper.Viper) error {
 		v.SetConfigFile(file)
 		err := v.ReadInConfig()
 		if err != nil {
-			return errors.Wrapf(err, "Error loading config file %s", file)
+			return fmt.Errorf("cannot load config file %s: %w", file, err)
 		}
 	}
 	return nil
+}
+
+// ParseJaegerTags parses the Jaeger tags string into a map.
+func ParseJaegerTags(jaegerTags string) map[string]string {
+	if jaegerTags == "" {
+		return nil
+	}
+	tagPairs := strings.Split(string(jaegerTags), ",")
+	tags := make(map[string]string)
+	for _, p := range tagPairs {
+		kv := strings.SplitN(p, "=", 2)
+		k, v := strings.TrimSpace(kv[0]), strings.TrimSpace(kv[1])
+
+		if strings.HasPrefix(v, "${") && strings.HasSuffix(v, "}") {
+			skipWhenEmpty := false
+
+			ed := strings.SplitN(string(v[2:len(v)-1]), ":", 2)
+			if len(ed) == 1 {
+				// no default value specified, set to empty
+				skipWhenEmpty = true
+				ed = append(ed, "")
+			}
+
+			e, d := ed[0], ed[1]
+			v = os.Getenv(e)
+			if v == "" && d != "" {
+				v = d
+			}
+
+			// no value is set, skip this entry
+			if v == "" && skipWhenEmpty {
+				continue
+			}
+		}
+
+		tags[k] = v
+	}
+
+	return tags
 }
 
 // SharedFlags holds flags configuration
 type SharedFlags struct {
 	// Logging holds logging configuration
 	Logging logging
-	// HealthCheck holds health check configuration
-	HealthCheck healthCheck
 }
 
 type logging struct {
 	Level string
 }
 
-type healthCheck struct {
-	Port int
-}
-
-// SetDefaultHealthCheckPort sets the default port for health check. Must be called before AddFlags
-func SetDefaultHealthCheckPort(port int) {
-	defaultHealthCheckPort = port
-}
-
 // AddFlags adds flags for SharedFlags
 func AddFlags(flagSet *flag.FlagSet) {
-	flagSet.String(spanStorageType, "", fmt.Sprintf(`Deprecated; please use %s environment variable. Run this binary with "env" command for help.`, storage.SpanStorageTypeEnvVar))
-	flagSet.Int(healthCheckHTTPPort, defaultHealthCheckPort, "The http port for the health check service")
+	flagSet.String(spanStorageType, "", "(deprecated) please use SPAN_STORAGE_TYPE environment variable. Run this binary with the 'env' command for help.")
 	AddLoggingFlag(flagSet)
 }
 
@@ -89,7 +112,6 @@ func AddLoggingFlag(flagSet *flag.FlagSet) {
 // InitFromViper initializes SharedFlags with properties from viper
 func (flags *SharedFlags) InitFromViper(v *viper.Viper) *SharedFlags {
 	flags.Logging.Level = v.GetString(logLevel)
-	flags.HealthCheck.Port = v.GetInt(healthCheckHTTPPort)
 	return flags
 }
 
@@ -102,13 +124,4 @@ func (flags *SharedFlags) NewLogger(conf zap.Config, options ...zap.Option) (*za
 	}
 	conf.Level = zap.NewAtomicLevelAt(level)
 	return conf.Build(options...)
-}
-
-// NewHealthCheck returns health check based on configuration in SharedFlags
-func (flags *SharedFlags) NewHealthCheck(logger *zap.Logger) (*hc.HealthCheck, error) {
-	if flags.HealthCheck.Port == 0 {
-		return nil, errors.New("port not specified")
-	}
-	return hc.New(hc.Unavailable, hc.Logger(logger)).
-		Serve(flags.HealthCheck.Port)
 }

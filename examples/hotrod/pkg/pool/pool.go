@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -49,5 +50,7 @@ func (p *Pool) Execute(job func()) {
 
 // Stop halts all the workers
 func (p *Pool) Stop() {
-	p.stop <- struct{}{}
+	if p.stop != nil {
+		close(p.stop)
+	}
 }

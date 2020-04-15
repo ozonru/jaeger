@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,15 +16,19 @@
 package querysvc
 
 import (
+	"time"
+
 	"github.com/jaegertracing/jaeger/model/adjuster"
 )
 
 // StandardAdjusters is a list of model adjusters applied by the query service
 // before returning the data to the API clients.
-var StandardAdjusters = []adjuster.Adjuster{
-	adjuster.SpanIDDeduper(),
-	adjuster.ClockSkew(),
-	adjuster.IPTagAdjuster(),
-	adjuster.SortLogFields(),
-	adjuster.SpanReferences(),
+func StandardAdjusters(maxClockSkewAdjust time.Duration) []adjuster.Adjuster {
+	return []adjuster.Adjuster{
+		adjuster.SpanIDDeduper(),
+		adjuster.ClockSkew(maxClockSkewAdjust),
+		adjuster.IPTagAdjuster(),
+		adjuster.SortLogFields(),
+		adjuster.SpanReferences(),
+	}
 }

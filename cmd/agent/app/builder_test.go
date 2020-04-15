@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +30,13 @@ import (
 	"github.com/uber/jaeger-lib/metrics"
 	"github.com/uber/jaeger-lib/metrics/metricstest"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v2"
 
-	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter/grpc"
-	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter/tchannel"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/configmanager"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter"
+	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter/grpc"
+	"github.com/jaegertracing/jaeger/tchannel/agent/app/reporter/tchannel"
+	"github.com/jaegertracing/jaeger/tchannel/collector/app"
 	"github.com/jaegertracing/jaeger/thrift-gen/baggage"
 	"github.com/jaegertracing/jaeger/thrift-gen/jaeger"
 	"github.com/jaegertracing/jaeger/thrift-gen/sampling"
@@ -143,7 +145,7 @@ func TestBuilderWithProcessorErrors(t *testing.T) {
 		_, err := cfg.CreateAgent(&fakeCollectorProxy{}, zap.NewNop(), metrics.NullFactory)
 		assert.Error(t, err)
 		if testCase.err != "" {
-			assert.EqualError(t, err, testCase.err)
+			assert.Contains(t, err.Error(), testCase.err)
 		} else if testCase.errContains != "" {
 			assert.True(t, strings.Contains(err.Error(), testCase.errContains), "error must contain %s", testCase.errContains)
 		}
@@ -179,6 +181,9 @@ func (fakeCollectorProxy) EmitZipkinBatch(spans []*zipkincore.Span) (err error) 
 func (fakeCollectorProxy) EmitBatch(batch *jaeger.Batch) (err error) {
 	return nil
 }
+func (fakeCollectorProxy) Close() error {
+	return nil
+}
 
 func (f fakeCollectorProxy) GetSamplingStrategy(serviceName string) (*sampling.SamplingStrategyResponse, error) {
 	return nil, errors.New("no peers available")
@@ -187,42 +192,29 @@ func (fakeCollectorProxy) GetBaggageRestrictions(serviceName string) ([]*baggage
 	return nil, nil
 }
 
-
 func TestCreateCollectorProxy(t *testing.T) {
-	tests := []struct{
-		flags []string
-		err string
+	tests := []struct {
+		flags  []string
+		err    string
 		metric metricstest.ExpectedMetric
 	}{
 		{
-			err: "could not create collector proxy, address is missing",
+			err: "at least one collector hostPort address is required when resolver is not available",
 		},
 		{
 			flags: []string{"--collector.host-port=foo"},
-			metric: metricstest.ExpectedMetric{Name: "reporter.batches.failures", Tags: map[string]string{"protocol": "tchannel", "format": "jaeger"}, Value: 1},
-		},
-		{
-			flags: []string{"--reporter.type=tchannel"},
-			metric: metricstest.ExpectedMetric{Name: "reporter.batches.failures", Tags: map[string]string{"protocol": "tchannel", "format": "jaeger"}, Value: 1},
-		},
-		{
-			flags: []string{"--reporter.type=tchannel", "--collector.host-port=foo"},
-			metric: metricstest.ExpectedMetric{Name: "reporter.batches.failures", Tags: map[string]string{"protocol": "tchannel", "format": "jaeger"}, Value: 1},
+			err:   "at least one collector hostPort address is required when resolver is not available",
 		},
 		{
 			flags: []string{"--reporter.type=grpc", "--collector.host-port=foo"},
-			metric: metricstest.ExpectedMetric{Name: "reporter.batches.failures", Tags: map[string]string{"protocol": "tchannel", "format": "jaeger"}, Value: 1},
+			err:   "at least one collector hostPort address is required when resolver is not available",
 		},
 		{
-			flags: []string{"--reporter.type=grpc", "--collector.host-port=foo"},
-			metric: metricstest.ExpectedMetric{Name: "reporter.batches.failures", Tags: map[string]string{"protocol": "tchannel", "format": "jaeger"}, Value: 1},
-		},
-		{
-			flags: []string{"--reporter.type=grpc", "--reporter.grpc.host-port=foo", "--collector.host-port=foo"},
+			flags:  []string{"--reporter.type=grpc", "--reporter.grpc.host-port=foo", "--collector.host-port=foo"},
 			metric: metricstest.ExpectedMetric{Name: "reporter.batches.failures", Tags: map[string]string{"protocol": "grpc", "format": "jaeger"}, Value: 1},
 		},
 		{
-			flags: []string{"--reporter.type=grpc", "--reporter.grpc.host-port=foo"},
+			flags:  []string{"--reporter.type=grpc", "--reporter.grpc.host-port=foo"},
 			metric: metricstest.ExpectedMetric{Name: "reporter.batches.failures", Tags: map[string]string{"protocol": "grpc", "format": "jaeger"}, Value: 1},
 		},
 	}
@@ -232,6 +224,7 @@ func TestCreateCollectorProxy(t *testing.T) {
 		tchannel.AddFlags(flags)
 		grpc.AddFlags(flags)
 		reporter.AddFlags(flags)
+		app.AddFlags(flags)
 
 		command := cobra.Command{}
 		command.PersistentFlags().AddGoFlagSet(flags)
@@ -241,12 +234,19 @@ func TestCreateCollectorProxy(t *testing.T) {
 		err := command.ParseFlags(test.flags)
 		require.NoError(t, err)
 
-		rOpts := new(reporter.Options).InitFromViper(v)
-		tchan := tchannel.NewBuilder().InitFromViper(v, zap.NewNop())
-		grpcOpts := new(grpc.Options).InitFromViper(v)
+		rOpts := new(reporter.Options).InitFromViper(v, zap.NewNop())
+		grpcBuilder := grpc.NewConnBuilder().InitFromViper(v)
 
 		metricsFactory := metricstest.NewFactory(time.Microsecond)
-		proxy, err := CreateCollectorProxy(rOpts, tchan, grpcOpts, zap.NewNop(), metricsFactory)
+
+		builders := map[reporter.Type]CollectorProxyBuilder{
+			reporter.GRPC: GRPCCollectorProxyBuilder(grpcBuilder),
+		}
+		proxy, err := CreateCollectorProxy(ProxyBuilderOptions{
+			Options: *rOpts,
+			Metrics: metricsFactory,
+			Logger:  zap.NewNop(),
+		}, builders)
 		if test.err != "" {
 			assert.EqualError(t, err, test.err)
 			assert.Nil(t, proxy)
@@ -259,11 +259,12 @@ func TestCreateCollectorProxy(t *testing.T) {
 }
 
 func TestCreateCollectorProxy_UnknownReporter(t *testing.T) {
-	rOpts := new(reporter.Options)
-	tchan := tchannel.NewBuilder()
-	grpcOpts := new(grpc.Options)
+	grpcBuilder := grpc.NewConnBuilder()
 
-	proxy, err := CreateCollectorProxy(rOpts, tchan, grpcOpts, zap.NewNop(), metrics.NullFactory)
+	builders := map[reporter.Type]CollectorProxyBuilder{
+		reporter.GRPC: GRPCCollectorProxyBuilder(grpcBuilder),
+	}
+	proxy, err := CreateCollectorProxy(ProxyBuilderOptions{}, builders)
 	assert.Nil(t, proxy)
 	assert.EqualError(t, err, "unknown reporter type ")
 }

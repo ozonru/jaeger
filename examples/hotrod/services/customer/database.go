@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,7 +62,7 @@ func newDatabase(tracer opentracing.Tracer, logger log.Factory) *database {
 			},
 			"731": {
 				ID:       "731",
-				Name:     "Japanese Deserts",
+				Name:     "Japanese Desserts",
 				Location: "728,326",
 			},
 		},

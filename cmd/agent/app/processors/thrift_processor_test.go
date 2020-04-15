@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,10 +28,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter"
-	tchreporter "github.com/jaegertracing/jaeger/cmd/agent/app/reporter/tchannel"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/servers"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/servers/thriftudp"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/testutils"
+	tchreporter "github.com/jaegertracing/jaeger/tchannel/agent/app/reporter/tchannel"
 	"github.com/jaegertracing/jaeger/thrift-gen/agent"
 	"github.com/jaegertracing/jaeger/thrift-gen/jaeger"
 	"github.com/jaegertracing/jaeger/thrift-gen/zipkincore"
@@ -83,7 +84,7 @@ func initCollectorAndReporter(t *testing.T) (*metricstest.Factory, *testutils.Mo
 
 func TestNewThriftProcessor_ZeroCount(t *testing.T) {
 	_, err := NewThriftProcessor(nil, 0, nil, nil, nil, zap.NewNop())
-	assert.EqualError(t, err, "Number of processors must be greater than 0, called with 0")
+	assert.EqualError(t, err, "number of processors must be greater than 0, called with 0")
 }
 
 func TestProcessorWithCompactZipkin(t *testing.T) {

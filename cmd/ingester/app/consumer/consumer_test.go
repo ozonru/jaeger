@@ -15,6 +15,7 @@
 package consumer
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -22,8 +23,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	smocks "github.com/Shopify/sarama/mocks"
-	"github.com/bsm/sarama-cluster"
-	"github.com/pkg/errors"
+	cluster "github.com/bsm/sarama-cluster"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -90,12 +90,12 @@ func newConsumer(
 
 	logger, _ := zap.NewDevelopment()
 	return &Consumer{
-		metricsFactory:     metricsFactory,
-		logger:             logger,
-		internalConsumer:   consumer,
-		partitionIDToState: make(map[int32]*consumerState),
-		partitionsHeld:     partitionsHeld(metricsFactory),
-		deadlockDetector:   newDeadlockDetector(metricsFactory, logger, time.Second),
+		metricsFactory:      metricsFactory,
+		logger:              logger,
+		internalConsumer:    consumer,
+		partitionIDToState:  make(map[int32]*consumerState),
+		partitionsHeldGauge: partitionsHeldGauge(metricsFactory),
+		deadlockDetector:    newDeadlockDetector(metricsFactory, logger, time.Second),
 
 		processorFactory: ProcessorFactory{
 			topic:          topic,
@@ -124,7 +124,7 @@ func TestSaramaConsumerWrapper_start_Messages(t *testing.T) {
 	isProcessed := sync.WaitGroup{}
 	isProcessed.Add(1)
 	mp := &pmocks.SpanProcessor{}
-	mp.On("Process", &saramaMessageWrapper{msg}).Return(func(msg processor.Message) error {
+	mp.On("Process", saramaMessageWrapper{msg}).Return(func(msg processor.Message) error {
 		isProcessed.Done()
 		return nil
 	})
@@ -153,7 +153,7 @@ func TestSaramaConsumerWrapper_start_Messages(t *testing.T) {
 	mc.YieldMessage(msg)
 	isProcessed.Wait()
 
-	localFactory.AssertCounterMetrics(t, metricstest.ExpectedMetric{
+	localFactory.AssertGaugeMetrics(t, metricstest.ExpectedMetric{
 		Name:  "sarama-consumer.partitions-held",
 		Value: 1,
 	})

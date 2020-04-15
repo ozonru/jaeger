@@ -46,6 +46,7 @@ func (s *KafkaIntegrationTestSuite) initialize() error {
 	s.logger, _ = testutils.NewLogger()
 	const encoding = "json"
 	const groupID = "kafka-integration-test"
+	const clientID = "kafka-integration-test"
 	// A new topic is generated per execution to avoid data overlap
 	topic := "jaeger-kafka-integration-test-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 
@@ -81,6 +82,8 @@ func (s *KafkaIntegrationTestSuite) initialize() error {
 		encoding,
 		"--kafka.consumer.group-id",
 		groupID,
+		"--kafka.consumer.client-id",
+		clientID,
 		"--ingester.parallelism",
 		"1000",
 	})
@@ -116,7 +119,10 @@ func (r *ingester) GetServices(ctx context.Context) ([]string, error) {
 	return nil, nil
 }
 
-func (r *ingester) GetOperations(ctx context.Context, service string) ([]string, error) {
+func (r *ingester) GetOperations(
+	ctx context.Context,
+	query spanstore.OperationQueryParameters,
+) ([]spanstore.Operation, error) {
 	return nil, nil
 }
 

@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,9 +30,9 @@ import (
 
 // Client is a remote client that implements route.Interface
 type Client struct {
-	tracer opentracing.Tracer
-	logger log.Factory
-	client *tracing.HTTPClient
+	tracer   opentracing.Tracer
+	logger   log.Factory
+	client   *tracing.HTTPClient
 	hostPort string
 }
 

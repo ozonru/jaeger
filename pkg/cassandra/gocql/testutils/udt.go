@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +31,7 @@ type UDTField struct {
 	Err   bool   // is error expected?
 }
 
-// UDTTestCase desribes a test for a UDT
+// UDTTestCase describes a test for a UDT
 type UDTTestCase struct {
 	Obj     gocql.UDTMarshaler
 	ObjName string
@@ -46,9 +47,9 @@ func (testCase UDTTestCase) Run(t *testing.T) {
 			// To test MarshalUDT we need a gocql.NativeType struct whose fields private.
 			// Instead we create a structural copy that we cast to gocql.NativeType using unsafe.Pointer
 			nt := struct {
-				proto  byte
-				typ    gocql.Type
-				custom string
+				proto byte
+				typ   gocql.Type
+				_     string
 			}{
 				proto: 0x03,
 				typ:   field.Type,

@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -68,7 +69,7 @@ func TestExtendLease(t *testing.T) {
 			caption:        "failed to extend lease",
 			applied:        false,
 			errScan:        nil,
-			expectedErrMsg: "This host does not own the resource lock",
+			expectedErrMsg: "this host does not own the resource lock",
 		},
 	}
 	for _, tc := range testCases {
@@ -92,27 +93,8 @@ func TestExtendLease(t *testing.T) {
 					assert.EqualError(t, err, testCase.expectedErrMsg)
 				}
 
-				assert.Len(t, args, 4)
-				if d, ok := args[0].(float64); ok {
-					assert.EqualValues(t, 60, d)
-				} else {
-					assert.Fail(t, "expecting first arg as int64", "received: %+v", args)
-				}
-				if d, ok := args[1].(string); ok {
-					assert.Equal(t, localhost, d)
-				} else {
-					assert.Fail(t, "expecting second arg as string", "received: %+v", args)
-				}
-				if d, ok := args[2].(string); ok {
-					assert.Equal(t, samplingLock, d)
-				} else {
-					assert.Fail(t, "expecting third arg as string", "received: %+v", args)
-				}
-				if d, ok := args[3].(string); ok {
-					assert.Equal(t, localhost, d)
-				} else {
-					assert.Fail(t, "expecting fourth arg as string", "received: %+v", args)
-				}
+				expectedArgs := []interface{}{60, localhost, samplingLock, localhost}
+				assert.Equal(t, expectedArgs, args)
 			})
 		})
 	}
@@ -134,7 +116,7 @@ func TestAcquire(t *testing.T) {
 			retVals:           []string{"", ""},
 			acquired:          false,
 			errScan:           errors.New("Failed to create lock"),
-			expectedErrMsg:    "Failed to acquire resource lock due to cassandra error: Failed to create lock",
+			expectedErrMsg:    "failed to acquire resource lock due to cassandra error: Failed to create lock",
 		},
 		{
 			caption:           "successfully created lock",
@@ -160,7 +142,7 @@ func TestAcquire(t *testing.T) {
 			retVals:           []string{samplingLock, localhost},
 			updateLockApplied: false,
 			errScan:           nil,
-			expectedErrMsg:    "Failed to extend lease on resource lock: This host does not own the resource lock",
+			expectedErrMsg:    "failed to extend lease on resource lock: this host does not own the resource lock",
 		},
 		{
 			caption:           "failed to acquire lock",
@@ -220,7 +202,7 @@ func TestForfeit(t *testing.T) {
 			applied:        false,
 			retVals:        []string{"", ""},
 			errScan:        errors.New("Failed to delete lock"),
-			expectedErrMsg: "Failed to forfeit resource lock due to cassandra error: Failed to delete lock",
+			expectedErrMsg: "failed to forfeit resource lock due to cassandra error: Failed to delete lock",
 		},
 		{
 			caption:        "successfully forfeited lock",
@@ -234,7 +216,7 @@ func TestForfeit(t *testing.T) {
 			applied:        false,
 			retVals:        []string{samplingLock, "otherhost"},
 			errScan:        nil,
-			expectedErrMsg: "Failed to forfeit resource lock: This host does not own the resource lock",
+			expectedErrMsg: "failed to forfeit resource lock: this host does not own the resource lock",
 		},
 	}
 	for _, tc := range testCases {

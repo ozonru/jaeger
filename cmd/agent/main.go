@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,35 +17,27 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"io/ioutil"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	jMetrics "github.com/uber/jaeger-lib/metrics"
+	"github.com/uber/jaeger-lib/metrics"
+	_ "go.uber.org/automaxprocs"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/grpclog"
 
 	"github.com/jaegertracing/jaeger/cmd/agent/app"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter"
 	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter/grpc"
-	"github.com/jaegertracing/jaeger/cmd/agent/app/reporter/tchannel"
+	"github.com/jaegertracing/jaeger/cmd/docs"
 	"github.com/jaegertracing/jaeger/cmd/flags"
 	"github.com/jaegertracing/jaeger/pkg/config"
-	"github.com/jaegertracing/jaeger/pkg/metrics"
 	"github.com/jaegertracing/jaeger/pkg/version"
+	"github.com/jaegertracing/jaeger/ports"
 )
 
 func main() {
-	var signalsChannel = make(chan os.Signal)
-	signal.Notify(signalsChannel, os.Interrupt, syscall.SIGTERM)
-
-	grpclog.SetLoggerV2(grpclog.NewLoggerV2(ioutil.Discard, os.Stderr, os.Stderr))
+	svc := flags.NewService(ports.AgentAdminHTTP)
+	svc.NoStorage = true
 
 	v := viper.New()
 	var command = &cobra.Command{
@@ -52,72 +45,58 @@ func main() {
 		Short: "Jaeger agent is a local daemon program which collects tracing data.",
 		Long:  `Jaeger agent is a daemon program that runs on every host and receives tracing data submitted by Jaeger client libraries.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			err := flags.TryLoadConfigFile(v)
-			if err != nil {
+			if err := svc.Start(v); err != nil {
 				return err
 			}
+			logger := svc.Logger // shortcut
+			mFactory := svc.MetricsFactory.
+				Namespace(metrics.NSOptions{Name: "jaeger"}).
+				Namespace(metrics.NSOptions{Name: "agent"})
 
-			sFlags := new(flags.SharedFlags).InitFromViper(v)
-			logger, err := sFlags.NewLogger(zap.NewProductionConfig())
-			if err != nil {
-				return err
+			rOpts := new(reporter.Options).InitFromViper(v, logger)
+			grpcBuilder := grpc.NewConnBuilder().InitFromViper(v)
+			builders := map[reporter.Type]app.CollectorProxyBuilder{
+				reporter.GRPC: app.GRPCCollectorProxyBuilder(grpcBuilder),
 			}
-
-			builder := new(app.Builder).InitFromViper(v)
-			mBldr := new(metrics.Builder).InitFromViper(v)
-
-			mFactory, err := mBldr.CreateMetricsFactory("jaeger")
-			if err != nil {
-				logger.Fatal("Could not create metrics", zap.Error(err))
-			}
-			mFactory = mFactory.Namespace(jMetrics.NSOptions{Name: "agent", Tags: nil})
-
-			rOpts := new(reporter.Options).InitFromViper(v)
-			tChanOpts := new(tchannel.Builder).InitFromViper(v, logger)
-			grpcOpts := new(grpc.Options).InitFromViper(v)
-			cp, err := app.CreateCollectorProxy(rOpts, tChanOpts, grpcOpts, logger, mFactory)
+			cp, err := app.CreateCollectorProxy(app.ProxyBuilderOptions{
+				Options: *rOpts,
+				Logger:  logger,
+				Metrics: mFactory,
+			}, builders)
 			if err != nil {
 				logger.Fatal("Could not create collector proxy", zap.Error(err))
 			}
 
 			// TODO illustrate discovery service wiring
 
+			builder := new(app.Builder).InitFromViper(v)
 			agent, err := builder.CreateAgent(cp, logger, mFactory)
 			if err != nil {
-				return errors.Wrap(err, "Unable to initialize Jaeger Agent")
-			}
-
-			if h := mBldr.Handler(); mFactory != nil && h != nil {
-				logger.Info("Registering metrics handler with HTTP server", zap.String("route", mBldr.HTTPRoute))
-				agent.GetServer().Handler.(*http.ServeMux).Handle(mBldr.HTTPRoute, h)
+				return fmt.Errorf("unable to initialize Jaeger Agent: %w", err)
 			}
 
 			logger.Info("Starting agent")
 			if err := agent.Run(); err != nil {
-				return errors.Wrap(err, "Failed to run the agent")
+				return fmt.Errorf("failed to run the agent: %w", err)
 			}
-			<-signalsChannel
-			logger.Info("Shutting down")
-			if closer, ok := cp.(io.Closer); ok {
-				closer.Close()
-			}
-			logger.Info("Shutdown complete")
+			svc.RunAndThen(func() {
+				agent.Stop()
+				cp.Close()
+			})
 			return nil
 		},
 	}
 
 	command.AddCommand(version.Command())
+	command.AddCommand(docs.Command(v))
 
 	config.AddFlags(
 		v,
 		command,
-		flags.AddConfigFileFlag,
-		flags.AddLoggingFlag,
+		svc.AddFlags,
 		app.AddFlags,
 		reporter.AddFlags,
-		tchannel.AddFlags,
 		grpc.AddFlags,
-		metrics.AddFlags,
 	)
 
 	if err := command.Execute(); err != nil {

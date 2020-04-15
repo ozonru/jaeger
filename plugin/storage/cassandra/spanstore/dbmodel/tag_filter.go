@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -52,7 +53,7 @@ func (tf ChainedTagFilter) FilterTags(span *model.Span, tags model.KeyValues) mo
 // FilterLogFields calls each FilterLogFields
 func (tf ChainedTagFilter) FilterLogFields(span *model.Span, logFields model.KeyValues) model.KeyValues {
 	for _, f := range tf {
-		logFields = f.FilterProcessTags(span, logFields)
+		logFields = f.FilterLogFields(span, logFields)
 	}
 	return logFields
 }

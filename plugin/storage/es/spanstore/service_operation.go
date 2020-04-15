@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,18 +17,17 @@ package spanstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"time"
 
-	"github.com/pkg/errors"
+	"github.com/olivere/elastic"
 	"go.uber.org/zap"
-	"gopkg.in/olivere/elastic.v5"
 
 	"github.com/jaegertracing/jaeger/pkg/cache"
 	"github.com/jaegertracing/jaeger/pkg/es"
 	"github.com/jaegertracing/jaeger/plugin/storage/es/spanstore/dbmodel"
-	storageMetrics "github.com/jaegertracing/jaeger/storage/spanstore/metrics"
 )
 
 const (
@@ -39,22 +39,18 @@ const (
 
 // ServiceOperationStorage stores service to operation pairs.
 type ServiceOperationStorage struct {
-	ctx          context.Context
 	client       es.Client
-	metrics      *storageMetrics.WriteMetrics
 	logger       *zap.Logger
 	serviceCache cache.Cache
 }
 
 // NewServiceOperationStorage returns a new ServiceOperationStorage.
 func NewServiceOperationStorage(
-	ctx context.Context,
 	client es.Client,
 	logger *zap.Logger,
 	cacheTTL time.Duration,
 ) *ServiceOperationStorage {
 	return &ServiceOperationStorage{
-		ctx:    ctx,
 		client: client,
 		logger: logger,
 		serviceCache: cache.NewLRUWithOptions(
@@ -81,25 +77,24 @@ func (s *ServiceOperationStorage) Write(indexName string, jsonSpan *dbmodel.Span
 	}
 }
 
-func (s *ServiceOperationStorage) getServices(indices []string) ([]string, error) {
+func (s *ServiceOperationStorage) getServices(context context.Context, indices []string) ([]string, error) {
 	serviceAggregation := getServicesAggregation()
 
 	searchService := s.client.Search(indices...).
-		Type(serviceType).
 		Size(0). // set to 0 because we don't want actual documents.
 		IgnoreUnavailable(true).
 		Aggregation(servicesAggregation, serviceAggregation)
 
-	searchResult, err := searchService.Do(s.ctx)
+	searchResult, err := searchService.Do(context)
 	if err != nil {
-		return nil, errors.Wrap(err, "Search service failed")
+		return nil, fmt.Errorf("search services failed: %w", err)
 	}
 	if searchResult.Aggregations == nil {
 		return []string{}, nil
 	}
 	bucket, found := searchResult.Aggregations.Terms(servicesAggregation)
 	if !found {
-		return nil, errors.New("Could not find aggregation of " + servicesAggregation)
+		return nil, errors.New("could not find aggregation of " + servicesAggregation)
 	}
 	serviceNamesBucket := bucket.Buckets
 	return bucketToStringArray(serviceNamesBucket)
@@ -111,27 +106,26 @@ func getServicesAggregation() elastic.Query {
 		Size(defaultDocCount) // Must set to some large number. ES deprecated size omission for aggregating all. https://github.com/elastic/elasticsearch/issues/18838
 }
 
-func (s *ServiceOperationStorage) getOperations(indices []string, service string) ([]string, error) {
+func (s *ServiceOperationStorage) getOperations(context context.Context, indices []string, service string) ([]string, error) {
 	serviceQuery := elastic.NewTermQuery(serviceName, service)
 	serviceFilter := getOperationsAggregation()
 
 	searchService := s.client.Search(indices...).
-		Type(serviceType).
 		Size(0).
 		Query(serviceQuery).
 		IgnoreUnavailable(true).
 		Aggregation(operationsAggregation, serviceFilter)
 
-	searchResult, err := searchService.Do(s.ctx)
+	searchResult, err := searchService.Do(context)
 	if err != nil {
-		return nil, errors.Wrap(err, "Search service failed")
+		return nil, fmt.Errorf("search operations failed: %w", err)
 	}
 	if searchResult.Aggregations == nil {
 		return []string{}, nil
 	}
 	bucket, found := searchResult.Aggregations.Terms(operationsAggregation)
 	if !found {
-		return nil, errors.New("Could not find aggregation of " + operationsAggregation)
+		return nil, errors.New("could not find aggregation of " + operationsAggregation)
 	}
 	operationNamesBucket := bucket.Buckets
 	return bucketToStringArray(operationNamesBucket)

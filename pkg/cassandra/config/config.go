@@ -1,3 +1,4 @@
+// Copyright (c) 2019 The Jaeger Authors.
 // Copyright (c) 2017 Uber Technologies, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,47 +24,40 @@ import (
 
 	"github.com/jaegertracing/jaeger/pkg/cassandra"
 	gocqlw "github.com/jaegertracing/jaeger/pkg/cassandra/gocql"
+	"github.com/jaegertracing/jaeger/pkg/config/tlscfg"
 )
 
 // Configuration describes the configuration properties needed to connect to a Cassandra cluster
 type Configuration struct {
-	Servers              []string      `validate:"nonzero"`
-	Keyspace             string        `validate:"nonzero"`
-	LocalDC              string        `yaml:"local_dc"`
-	ConnectionsPerHost   int           `validate:"min=1" yaml:"connections_per_host"`
-	Timeout              time.Duration `validate:"min=500"`
-	ReconnectInterval    time.Duration `validate:"min=500" yaml:"reconnect_interval"`
-	SocketKeepAlive      time.Duration `validate:"min=0" yaml:"socket_keep_alive"`
-	MaxRetryAttempts     int           `validate:"min=0" yaml:"max_retry_attempt"`
-	ProtoVersion         int           `yaml:"proto_version"`
-	Consistency          string        `yaml:"consistency"`
-	Port                 int           `yaml:"port"`
-	Authenticator        Authenticator `yaml:"authenticator"`
-	DisableAutoDiscovery bool          `yaml:"disable_auto_discovery"`
-	EnableDependenciesV2 bool          `yaml:"enable_dependencies_v2"`
-	TLS                  TLS
+	Servers              []string       `validate:"nonzero" mapstructure:"servers"`
+	Keyspace             string         `validate:"nonzero" mapstructure:"keyspace"`
+	LocalDC              string         `yaml:"local_dc" mapstructure:"local_dc"`
+	ConnectionsPerHost   int            `validate:"min=1" yaml:"connections_per_host" mapstructure:"connections_per_host"`
+	Timeout              time.Duration  `validate:"min=500" mapstructure:"-"`
+	ConnectTimeout       time.Duration  `yaml:"connect_timeout" mapstructure:"connection_timeout"`
+	ReconnectInterval    time.Duration  `validate:"min=500" yaml:"reconnect_interval" mapstructure:"reconnect_interval"`
+	SocketKeepAlive      time.Duration  `validate:"min=0" yaml:"socket_keep_alive" mapstructure:"socket_keep_alive"`
+	MaxRetryAttempts     int            `validate:"min=0" yaml:"max_retry_attempt" mapstructure:"max_retry_attempts"`
+	ProtoVersion         int            `yaml:"proto_version" mapstructure:"proto_version"`
+	Consistency          string         `yaml:"consistency" mapstructure:"consistency"`
+	DisableCompression   bool           `yaml:"disable-compression" mapstructure:"disable_compression"`
+	Port                 int            `yaml:"port" mapstructure:"port"`
+	Authenticator        Authenticator  `yaml:"authenticator" mapstructure:",squash"`
+	DisableAutoDiscovery bool           `yaml:"disable_auto_discovery" mapstructure:"-"`
+	EnableDependenciesV2 bool           `yaml:"enable_dependencies_v2" mapstructure:"-"`
+	TLS                  tlscfg.Options `mapstructure:"tls"`
 }
 
 // Authenticator holds the authentication properties needed to connect to a Cassandra cluster
 type Authenticator struct {
-	Basic BasicAuthenticator `yaml:"basic"`
+	Basic BasicAuthenticator `yaml:"basic" mapstructure:",squash"`
 	// TODO: add more auth types
 }
 
 // BasicAuthenticator holds the username and password for a password authenticator for a Cassandra cluster
 type BasicAuthenticator struct {
-	Username string `yaml:"username"`
-	Password string `yaml:"password"`
-}
-
-// TLS Config
-type TLS struct {
-	Enabled                bool
-	ServerName             string
-	CertPath               string
-	KeyPath                string
-	CaPath                 string
-	EnableHostVerification bool
+	Username string `yaml:"username" mapstructure:"username"`
+	Password string `yaml:"password" mapstructure:"password"`
 }
 
 // ApplyDefaults copies settings from source unless its own value is non-zero.
@@ -115,6 +109,7 @@ func (c *Configuration) NewCluster() *gocql.ClusterConfig {
 	cluster.Keyspace = c.Keyspace
 	cluster.NumConns = c.ConnectionsPerHost
 	cluster.Timeout = c.Timeout
+	cluster.ConnectTimeout = c.ConnectTimeout
 	cluster.ReconnectInterval = c.ReconnectInterval
 	cluster.SocketKeepalive = c.SocketKeepAlive
 	if c.ProtoVersion > 0 {
@@ -126,7 +121,11 @@ func (c *Configuration) NewCluster() *gocql.ClusterConfig {
 	if c.Port != 0 {
 		cluster.Port = c.Port
 	}
-	cluster.Compressor = gocql.SnappyCompressor{}
+
+	if !c.DisableCompression {
+		cluster.Compressor = gocql.SnappyCompressor{}
+	}
+
 	if c.Consistency == "" {
 		cluster.Consistency = gocql.LocalOne
 	} else {
@@ -152,8 +151,8 @@ func (c *Configuration) NewCluster() *gocql.ClusterConfig {
 			},
 			CertPath:               c.TLS.CertPath,
 			KeyPath:                c.TLS.KeyPath,
-			CaPath:                 c.TLS.CaPath,
-			EnableHostVerification: c.TLS.EnableHostVerification,
+			CaPath:                 c.TLS.CAPath,
+			EnableHostVerification: !c.TLS.SkipHostVerify,
 		}
 	}
 	// If tunneling connection to C*, disable cluster autodiscovery features.
