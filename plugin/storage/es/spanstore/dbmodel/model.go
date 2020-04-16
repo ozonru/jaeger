@@ -45,6 +45,7 @@ const (
 	BinaryType ValueType = "binary"
 )
 
+//easyjson:json
 // Span is ES database representation of the domain span.
 type Span struct {
 	TraceID       TraceID     `json:"traceID"`
