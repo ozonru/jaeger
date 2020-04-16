@@ -86,8 +86,11 @@ func (fd FromDomain) convertRefType(refType model.SpanRefType) ReferenceType {
 }
 
 func (fd FromDomain) convertKeyValuesString(keyValues model.KeyValues) ([]KeyValue, map[string]interface{}) {
-	var tagsMap map[string]interface{}
-	var kvs []KeyValue
+	var (
+		tagsMap = make(map[string]interface{}, len(keyValues))
+		kvs     = make([]KeyValue, 0, len(keyValues))
+	)
+
 	for _, kv := range keyValues {
 		if kv.GetVType() != model.BinaryType && (fd.allTagsAsFields || fd.tagKeysAsFields[kv.Key]) {
 			if tagsMap == nil {
