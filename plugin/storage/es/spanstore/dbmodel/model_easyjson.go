@@ -4,6 +4,7 @@ package dbmodel
 
 import (
 	json "encoding/json"
+
 	easyjson "github.com/mailru/easyjson"
 	jlexer "github.com/mailru/easyjson/jlexer"
 	jwriter "github.com/mailru/easyjson/jwriter"
@@ -525,7 +526,7 @@ func easyjsonC80ae7adDecodeGithubComJaegertracingJaegerPluginStorageEsSpanstoreD
 	if in.IsNull() {
 		if isTopLevel {
 			in.Consumed()
-		}cd .
+		}
 		in.Skip()
 		return
 	}
